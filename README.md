@@ -38,4 +38,4 @@ There's nothing to install. Open `index.html` directly in a browser, or serve th
 
 ## License
 
-No license file yet — ask before reusing outside personal/teaching use.
+[MIT](LICENSE) — use it, modify it, teach with it, no strings attached.
