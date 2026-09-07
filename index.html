@@ -1,0 +1,1103 @@
+<title>Python IDE</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<style>
+  :root{
+    --bg:#282a36; --current-line:#44475a; --fg:#f8f8f2; --comment:#6272a4;
+    --cyan:#8be9fd; --green:#50fa7b; --orange:#ffb86c; --pink:#ff79c6;
+    --purple:#bd93f9; --red:#ff5555; --yellow:#f1fa8c; --panel-bg:#21222c;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column; height:100vh; overflow:hidden;
+  }
+  header.toolbar{
+    display:flex; align-items:center; gap:.5rem; padding:.5rem .9rem;
+    background:var(--current-line); border-bottom:1px solid #191a21; flex-wrap:wrap;
+  }
+  header.toolbar h1{ font-size:.95rem; margin:0 .8rem 0 0; color:var(--purple); font-weight:600; }
+  .toolbar button{
+    background:var(--purple); color:#191a21; border:none; padding:.42rem .8rem;
+    border-radius:5px; cursor:pointer; font-size:.82rem; font-weight:600;
+    display:flex; align-items:center; gap:.35rem;
+  }
+  .toolbar button:hover{ filter:brightness(1.12); }
+  .toolbar button:disabled{ opacity:.45; cursor:not-allowed; }
+  .toolbar button.secondary{ background:var(--current-line); color:var(--fg); border:1px solid var(--comment); }
+  #filename-input{
+    background:var(--panel-bg); color:var(--fg); border:1px solid var(--comment);
+    border-radius:5px; padding:.35rem .5rem; font-size:.8rem; width:9.5rem; font-family:'Fira Code',monospace;
+  }
+  #status{ margin-left:auto; display:flex; align-items:center; gap:.5rem; font-size:.78rem; color:var(--comment); }
+  .status-dot{ width:8px; height:8px; border-radius:50%; background:var(--orange); }
+  .status-dot.ready{ background:var(--green); }
+  #char-count{ font-size:.75rem; color:var(--comment); white-space:nowrap; }
+  #char-count.warn{ color:var(--orange); font-weight:700; }
+
+  details.vfile{ background:var(--panel-bg); border-bottom:1px solid #191a21; padding:.45rem 1rem; }
+  details.vfile summary{ cursor:pointer; font-size:.8rem; color:var(--comment); user-select:none; }
+  .vfile-body{ display:flex; gap:.7rem; margin-top:.5rem; align-items:flex-start; flex-wrap:wrap; }
+  .vfile-body label{ font-size:.75rem; color:var(--comment); display:block; margin-bottom:.2rem; }
+  #vfile-name{
+    background:var(--bg); color:var(--fg); border:1px solid var(--comment);
+    border-radius:4px; padding:.3rem .5rem; font-family:'Fira Code',monospace; font-size:.8rem; width:12rem;
+  }
+  #vfile-content{
+    flex:1; min-width:220px; min-height:64px; background:var(--bg); color:var(--fg);
+    border:1px solid var(--comment); border-radius:4px; font-family:'Fira Code',monospace;
+    font-size:.78rem; padding:.4rem; resize:vertical;
+  }
+
+  main.workspace{ flex:1; display:flex; min-height:0; }
+  .panel{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  .panel-header{
+    padding:.35rem .9rem; background:var(--panel-bg); font-size:.7rem;
+    text-transform:uppercase; letter-spacing:.06em; color:var(--comment); border-bottom:1px solid #191a21;
+  }
+  #editor-panel{ border-right:1px solid #191a21; }
+  #editor-panel .CodeMirror{ height:100%; font-family:'Fira Code',monospace; font-size:14px; }
+  .CodeMirror{ height:100% !important; }
+
+  #output-panel{ background:var(--panel-bg); }
+  .tabs{ display:flex; gap:.3rem; padding:.4rem .7rem 0; background:var(--panel-bg); }
+  .tab-btn{
+    background:transparent; border:1px solid var(--comment); border-bottom:none; color:var(--comment);
+    padding:.3rem .8rem; border-radius:5px 5px 0 0; cursor:pointer; font-size:.78rem;
+  }
+  .tab-btn.active{ background:var(--bg); border-color:var(--purple); color:var(--purple); font-weight:600; }
+  .tab-content{ flex:1; overflow:auto; padding:.7rem; background:var(--bg); }
+  .tab-content.hidden{ display:none; }
+  #console-output{
+    margin:0; white-space:pre-wrap; word-break:break-word; font-family:'Fira Code',monospace;
+    font-size:13px; line-height:1.45;
+  }
+  #console-output .stderr{ color:var(--red); }
+  #console-output .stdout{ color:var(--fg); }
+  #tab-graphics{ display:flex; align-items:center; justify-content:center; background:#1e1f29; }
+  #turtle-canvas{ background:#fff; border-radius:4px; }
+  #p5-container canvas{ border-radius:4px; }
+  #files-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.4rem; }
+  #files-list li a{
+    color:var(--cyan); text-decoration:none; font-family:'Fira Code',monospace; font-size:.85rem;
+  }
+  #files-list li a:hover{ text-decoration:underline; }
+  #files-empty{ color:var(--comment); font-size:.85rem; }
+
+  #parsons-overlay{ position:fixed; inset:0; background:#000; display:flex; align-items:center; justify-content:center; z-index:1000; }
+  #parsons-overlay.hidden{ display:none; }
+  .parsons-modal{
+    background:var(--bg); border:1px solid var(--comment); border-radius:9px;
+    width:min(920px,92vw); max-height:88vh; display:flex; flex-direction:column; padding:1rem 1.4rem;
+  }
+  .parsons-header{ display:flex; justify-content:space-between; align-items:center; }
+  .parsons-header h2{ margin:0; font-size:1.05rem; color:var(--purple); }
+  .parsons-actions{ display:flex; gap:.5rem; }
+  .parsons-instructions{ color:var(--comment); font-size:.82rem; margin:.5rem 0 0; }
+  .parsons-columns{ display:flex; gap:1rem; flex:1; overflow:auto; margin-top:.6rem; }
+  .parsons-column{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  .parsons-column h3{ font-size:.75rem; text-transform:uppercase; color:var(--comment); margin:.2rem 0; }
+  .parsons-list{
+    flex:1; border:1px dashed var(--comment); border-radius:6px; padding:.5rem; min-height:220px;
+    display:flex; flex-direction:column; gap:.35rem; background:var(--panel-bg); overflow:auto;
+  }
+  .parsons-block{
+    background:var(--current-line); border:1px solid var(--comment); border-radius:4px;
+    padding:.4rem .6rem; font-family:'Fira Code',monospace; font-size:12.5px; white-space:pre;
+    cursor:grab; overflow-x:auto;
+  }
+  .parsons-block.dragging{ opacity:.4; }
+  .parsons-block.correct{ border-color:var(--green); background:rgba(80,250,123,.15); }
+  .parsons-block.incorrect{ border-color:var(--red); background:rgba(255,85,85,.15); }
+  #parsons-result{ margin-top:.6rem; font-size:.88rem; color:var(--fg); }
+  #parsons-result.success{ color:var(--green); font-weight:700; }
+
+  #toast{
+    position:fixed; bottom:1.2rem; right:1.2rem; background:var(--current-line); border:1px solid var(--purple);
+    color:var(--fg); padding:.6rem 1rem; border-radius:6px; font-size:.85rem; opacity:0;
+    transform:translateY(10px); transition:all .25s ease; pointer-events:none; z-index:2000; max-width:20rem;
+  }
+  #toast.show{ opacity:1; transform:translateY(0); }
+  .hidden{ display:none !important; }
+</style>
+
+<header class="toolbar">
+  <h1>&#128013; Python IDE</h1>
+  <button id="run-btn" disabled>&#9654; Run</button>
+  <input id="filename-input" type="text" value="program.py" title="Filename for download">
+  <button id="download-btn" class="secondary">&#11015; Download</button>
+  <button id="upload-btn" class="secondary">&#11014; Upload</button>
+  <input id="upload-input" type="file" accept=".py" class="hidden">
+  <button id="parsons-btn" class="secondary">&#129513; Parsons</button>
+  <button id="share-btn" class="secondary">&#128279; Share</button>
+  <span id="char-count">0 chars</span>
+  <span id="status"><span class="status-dot" id="status-dot"></span><span id="status-text">Loading Python runtime&hellip;</span></span>
+</header>
+
+<details class="vfile">
+  <summary>Program input file (readable from Python via <code>open(filename)</code>)</summary>
+  <div class="vfile-body">
+    <div>
+      <label for="vfile-name">Filename</label>
+      <input id="vfile-name" type="text" value="input.txt">
+    </div>
+    <div style="flex:1; min-width:220px;">
+      <label for="vfile-content">Content</label>
+      <textarea id="vfile-content" placeholder="Paste file content here&hellip;"></textarea>
+    </div>
+  </div>
+</details>
+
+<main class="workspace">
+  <section class="panel" id="editor-panel">
+    <div class="panel-header">Editor</div>
+    <textarea id="editor"># Welcome to the Python IDE!
+# Click Run to execute this code in your browser.
+
+for i in range(5):
+    print(i, i ** 2)
+
+print("Hello, world!")
+</textarea>
+  </section>
+  <section class="panel" id="output-panel">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="console">Console</button>
+      <button class="tab-btn" data-tab="graphics">Graphics</button>
+      <button class="tab-btn" data-tab="files">Files</button>
+    </div>
+    <div class="tab-content" id="tab-console"><pre id="console-output"></pre></div>
+    <div class="tab-content hidden" id="tab-graphics">
+      <canvas id="turtle-canvas" width="560" height="440" style="display:none;"></canvas>
+      <div id="p5-container" style="display:none;"></div>
+    </div>
+    <div class="tab-content hidden" id="tab-files">
+      <p id="files-empty">No files written by the program yet.</p>
+      <ul id="files-list"></ul>
+    </div>
+  </section>
+</main>
+
+<div id="parsons-overlay" class="hidden">
+  <div class="parsons-modal">
+    <div class="parsons-header">
+      <h2>Parsons Puzzle</h2>
+      <div class="parsons-actions">
+        <button id="parsons-check">Check</button>
+        <button id="parsons-reset" class="secondary">Reshuffle</button>
+        <button id="parsons-share" class="secondary">&#128279; Share Puzzle</button>
+        <button id="parsons-close" class="secondary">Close</button>
+      </div>
+    </div>
+    <p class="parsons-instructions">Drag lines from the tray into the answer area, in the order you think they run.</p>
+    <div class="parsons-columns">
+      <div class="parsons-column">
+        <h3>Tray</h3>
+        <div id="parsons-tray" class="parsons-list"></div>
+      </div>
+      <div class="parsons-column">
+        <h3>Your answer</h3>
+        <div id="parsons-dropzone" class="parsons-list"></div>
+      </div>
+    </div>
+    <div id="parsons-result"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* Defensive shim: some sandboxed/embedded contexts (e.g. data: origins) disable
+   Web Storage, which trips up third-party scripts (Pyodide/p5) that assume it exists. */
+(function () {
+  function ensureStorage(name) {
+    try {
+      window[name].setItem('__t', '1');
+      window[name].removeItem('__t');
+    } catch (e) {
+      const mem = new Map();
+      const fake = {
+        getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+        setItem: (k, v) => { mem.set(k, String(v)); },
+        removeItem: (k) => { mem.delete(k); },
+        clear: () => mem.clear(),
+        key: (i) => [...mem.keys()][i] || null,
+        get length() { return mem.size; }
+      };
+      try {
+        Object.defineProperty(window, name, { value: fake, configurable: true, writable: true });
+      } catch (e2) { /* nothing more we can do */ }
+    }
+  }
+  ensureStorage('sessionStorage');
+  ensureStorage('localStorage');
+})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
+
+<script>
+/* ---------- Python shim source: canvas-backed turtle module ---------- */
+const TURTLE_SRC = `
+import math
+from js import _turtleCanvas as _turtle_canvas, _turtleCtx as _turtle_ctx
+
+def _parse_color(args):
+    if len(args) == 1:
+        c = args[0]
+        if isinstance(c, (tuple, list)) and len(c) == 3:
+            r, g, b = c
+            return "rgb(%d,%d,%d)" % (int(r), int(g), int(b))
+        return str(c)
+    if len(args) == 3:
+        r, g, b = args
+        return "rgb(%d,%d,%d)" % (int(r), int(g), int(b))
+    return "#000000"
+
+def _tx(x, y):
+    return _turtle_canvas.width / 2 + x, _turtle_canvas.height / 2 - y
+
+class Turtle:
+    def __init__(self):
+        self._x = 0.0
+        self._y = 0.0
+        self._heading = 0.0
+        self._is_down = True
+        self._pen_color = "#000000"
+        self._fill_color = "#000000"
+        self._pen_size = 1
+        self._visible = True
+        self._filling = False
+        self._fill_points = []
+
+    def _move_to(self, nx, ny):
+        if self._is_down:
+            x1, y1 = _tx(self._x, self._y)
+            x2, y2 = _tx(nx, ny)
+            _turtle_ctx.beginPath()
+            _turtle_ctx.strokeStyle = self._pen_color
+            _turtle_ctx.lineWidth = self._pen_size
+            _turtle_ctx.moveTo(x1, y1)
+            _turtle_ctx.lineTo(x2, y2)
+            _turtle_ctx.stroke()
+        if self._filling:
+            self._fill_points.append((nx, ny))
+        self._x, self._y = nx, ny
+
+    def forward(self, dist):
+        rad = math.radians(self._heading)
+        self._move_to(self._x + dist * math.cos(rad), self._y + dist * math.sin(rad))
+    fd = forward
+
+    def backward(self, dist):
+        self.forward(-dist)
+    bk = backward
+    back = backward
+
+    def right(self, angle):
+        self._heading -= angle
+    rt = right
+
+    def left(self, angle):
+        self._heading += angle
+    lt = left
+
+    def setheading(self, angle):
+        self._heading = angle
+    seth = setheading
+
+    def heading(self):
+        return self._heading
+
+    def home(self):
+        self._move_to(0, 0)
+        self._heading = 0
+
+    def goto(self, x, y=None):
+        if y is None:
+            x, y = x[0], x[1]
+        self._move_to(x, y)
+    setpos = goto
+    setposition = goto
+
+    def setx(self, x):
+        self._move_to(x, self._y)
+
+    def sety(self, y):
+        self._move_to(self._x, y)
+
+    def position(self):
+        return (self._x, self._y)
+    pos = position
+
+    def xcor(self):
+        return self._x
+
+    def ycor(self):
+        return self._y
+
+    def distance(self, x, y=None):
+        if y is None:
+            x, y = x[0], x[1]
+        return math.hypot(x - self._x, y - self._y)
+
+    def penup(self):
+        self._is_down = False
+    pu = penup
+    up = penup
+
+    def pendown(self):
+        self._is_down = True
+    pd = pendown
+    down = pendown
+
+    def isdown(self):
+        return self._is_down
+
+    def pensize(self, w=None):
+        if w is None:
+            return self._pen_size
+        self._pen_size = w
+    width = pensize
+
+    def pencolor(self, *args):
+        if not args:
+            return self._pen_color
+        self._pen_color = _parse_color(args)
+
+    def fillcolor(self, *args):
+        if not args:
+            return self._fill_color
+        self._fill_color = _parse_color(args)
+
+    def color(self, *args):
+        if not args:
+            return (self._pen_color, self._fill_color)
+        if len(args) == 2:
+            self._pen_color = _parse_color([args[0]])
+            self._fill_color = _parse_color([args[1]])
+        else:
+            c = _parse_color(args)
+            self._pen_color = c
+            self._fill_color = c
+
+    def begin_fill(self):
+        self._filling = True
+        self._fill_points = [(self._x, self._y)]
+
+    def end_fill(self):
+        self._filling = False
+        pts = self._fill_points
+        if len(pts) > 2:
+            _turtle_ctx.beginPath()
+            _turtle_ctx.fillStyle = self._fill_color
+            x0, y0 = _tx(*pts[0])
+            _turtle_ctx.moveTo(x0, y0)
+            for p in pts[1:]:
+                px, py = _tx(*p)
+                _turtle_ctx.lineTo(px, py)
+            _turtle_ctx.closePath()
+            _turtle_ctx.fill()
+        self._fill_points = []
+
+    def circle(self, radius, extent=360, steps=None):
+        if steps is None:
+            steps = max(12, int(abs(extent) / 6))
+        angle = extent / steps
+        chord = 2 * abs(radius) * math.sin(math.radians(angle) / 2)
+        turn = angle if radius >= 0 else -angle
+        for _ in range(steps):
+            self.forward(chord)
+            self.left(turn)
+
+    def dot(self, size=None, color=None):
+        if size is None:
+            size = max(self._pen_size + 4, 8)
+        col = _parse_color([color]) if color is not None else self._pen_color
+        cx, cy = _tx(self._x, self._y)
+        _turtle_ctx.beginPath()
+        _turtle_ctx.fillStyle = col
+        _turtle_ctx.arc(cx, cy, size / 2, 0, 2 * math.pi)
+        _turtle_ctx.fill()
+
+    def write(self, text, move=False, align="left", font=None):
+        cx, cy = _tx(self._x, self._y)
+        _turtle_ctx.fillStyle = self._pen_color
+        _turtle_ctx.font = "14px monospace"
+        _turtle_ctx.textAlign = align if align in ("left", "center", "right") else "left"
+        _turtle_ctx.fillText(str(text), cx, cy)
+
+    def showturtle(self):
+        self._visible = True
+    st = showturtle
+
+    def hideturtle(self):
+        self._visible = False
+    ht = hideturtle
+
+    def isvisible(self):
+        return self._visible
+
+    def speed(self, s=None):
+        pass
+
+    def reset(self):
+        self._x = self._y = 0.0
+        self._heading = 0.0
+        self._is_down = True
+
+    def clear(self):
+        _turtle_ctx.clearRect(0, 0, _turtle_canvas.width, _turtle_canvas.height)
+        _turtle_ctx.fillStyle = "#ffffff"
+        _turtle_ctx.fillRect(0, 0, _turtle_canvas.width, _turtle_canvas.height)
+
+Pen = Turtle
+
+class _Screen:
+    def bgcolor(self, *args):
+        if not args:
+            return "#ffffff"
+        col = _parse_color(args)
+        _turtle_ctx.fillStyle = col
+        _turtle_ctx.fillRect(0, 0, _turtle_canvas.width, _turtle_canvas.height)
+
+    def title(self, t):
+        pass
+
+    def setup(self, *a, **k):
+        pass
+
+    def screensize(self, *a, **k):
+        pass
+
+    def mainloop(self):
+        pass
+
+    def exitonclick(self):
+        pass
+
+    def tracer(self, *a, **k):
+        pass
+
+    def update(self):
+        pass
+
+    def clear(self):
+        _turtle_ctx.clearRect(0, 0, _turtle_canvas.width, _turtle_canvas.height)
+        _turtle_ctx.fillStyle = "#ffffff"
+        _turtle_ctx.fillRect(0, 0, _turtle_canvas.width, _turtle_canvas.height)
+
+_screen = _Screen()
+
+def Screen():
+    return _screen
+
+_default = Turtle()
+
+def forward(d): _default.forward(d)
+def fd(d): _default.forward(d)
+def backward(d): _default.backward(d)
+def bk(d): _default.backward(d)
+def back(d): _default.backward(d)
+def right(a): _default.right(a)
+def rt(a): _default.right(a)
+def left(a): _default.left(a)
+def lt(a): _default.left(a)
+def setheading(a): _default.setheading(a)
+def seth(a): _default.setheading(a)
+def heading(): return _default.heading()
+def home(): _default.home()
+def goto(x, y=None): _default.goto(x, y)
+def setpos(x, y=None): _default.goto(x, y)
+def setposition(x, y=None): _default.goto(x, y)
+def setx(x): _default.setx(x)
+def sety(y): _default.sety(y)
+def position(): return _default.position()
+def pos(): return _default.position()
+def xcor(): return _default.xcor()
+def ycor(): return _default.ycor()
+def distance(x, y=None): return _default.distance(x, y)
+def penup(): _default.penup()
+def pu(): _default.penup()
+def up(): _default.penup()
+def pendown(): _default.pendown()
+def pd(): _default.pendown()
+def down(): _default.pendown()
+def isdown(): return _default.isdown()
+def pensize(w=None): return _default.pensize(w)
+def width(w=None): return _default.pensize(w)
+def pencolor(*a): return _default.pencolor(*a)
+def fillcolor(*a): return _default.fillcolor(*a)
+def color(*a): return _default.color(*a)
+def begin_fill(): _default.begin_fill()
+def end_fill(): _default.end_fill()
+def circle(r, extent=360, steps=None): _default.circle(r, extent, steps)
+def dot(size=None, color=None): _default.dot(size, color)
+def write(text, move=False, align="left", font=None): _default.write(text, move, align, font)
+def showturtle(): _default.showturtle()
+def st(): _default.showturtle()
+def hideturtle(): _default.hideturtle()
+def ht(): _default.hideturtle()
+def isvisible(): return _default.isvisible()
+def speed(s=None): pass
+def reset(): _default.reset()
+def clear(): _default.clear()
+def bgcolor(*a): return _screen.bgcolor(*a)
+def title(t): pass
+def setup(*a, **k): pass
+def screensize(*a, **k): pass
+def mainloop(): pass
+def done(): pass
+def exitonclick(): pass
+def tracer(*a, **k): pass
+def update(): pass
+`;
+
+/* p5 module: forwards attribute access to the live JS p5 instance */
+const P5_MODULE_SRC = `
+import sys, types
+import js as _js
+
+class _P5Module(types.ModuleType):
+    def __getattr__(self, name):
+        sketch = getattr(_js, "_p5Sketch", None)
+        if sketch is None:
+            raise AttributeError(name)
+        return getattr(sketch, name)
+
+sys.modules['p5'] = _P5Module('p5')
+`;
+
+/* ---------- CodeMirror setup ---------- */
+let editorInitialValue = null;
+let autoOpenPuzzle = false;
+if (location.hash.startsWith('#code=')) {
+  try {
+    const decoded = LZString.decompressFromEncodedURIComponent(location.hash.slice(6));
+    if (decoded) editorInitialValue = decoded;
+  } catch (e) { /* ignore malformed hash */ }
+} else if (location.hash.startsWith('#puzzle=')) {
+  try {
+    const decoded = LZString.decompressFromEncodedURIComponent(location.hash.slice(8));
+    if (decoded) { editorInitialValue = decoded; autoOpenPuzzle = true; }
+  } catch (e) { /* ignore malformed hash */ }
+}
+
+/* Cmd-D / Ctrl-D: select word under cursor, then add each further match as an
+   extra selection (like VS Code / Sublime "select next occurrence"). */
+function selectNextOccurrence(cm) {
+  const selections = cm.listSelections();
+  const last = selections[selections.length - 1];
+
+  if (CodeMirror.cmpPos(last.anchor, last.head) === 0) {
+    const cur = last.head;
+    const line = cm.getLine(cur.line);
+    let start = cur.ch, end = cur.ch;
+    while (start > 0 && /\w/.test(line.charAt(start - 1))) start--;
+    while (end < line.length && /\w/.test(line.charAt(end))) end++;
+    if (start === end) return;
+    const from = { line: cur.line, ch: start };
+    const to = { line: cur.line, ch: end };
+    const newSelections = selections.slice(0, -1).concat([{ anchor: from, head: to }]);
+    cm.setSelections(newSelections, newSelections.length - 1);
+    return;
+  }
+
+  const word = cm.getRange(last.anchor, last.head);
+  if (!word) return;
+  const searchFrom = CodeMirror.cmpPos(last.anchor, last.head) < 0 ? last.head : last.anchor;
+
+  const isDuplicate = (from, to) => selections.some(s =>
+    (CodeMirror.cmpPos(s.anchor, from) === 0 && CodeMirror.cmpPos(s.head, to) === 0) ||
+    (CodeMirror.cmpPos(s.anchor, to) === 0 && CodeMirror.cmpPos(s.head, from) === 0)
+  );
+
+  let cursor = cm.getSearchCursor(word, searchFrom);
+  let from = null, to = null;
+  for (let i = 0; i < selections.length + 1; i++) {
+    if (!cursor.findNext()) {
+      cursor = cm.getSearchCursor(word, { line: 0, ch: 0 });
+      if (!cursor.findNext()) return;
+    }
+    from = cursor.from();
+    to = cursor.to();
+    if (!isDuplicate(from, to)) break;
+  }
+  if (!from) return;
+
+  const newSelections = selections.concat([{ anchor: from, head: to }]);
+  cm.setSelections(newSelections, newSelections.length - 1);
+  cm.scrollIntoView({ from, to });
+}
+
+/* Tab: indent the selected lines when something is selected, otherwise just
+   insert a soft tab at the cursor. */
+function smartTab(cm) {
+  if (cm.somethingSelected()) {
+    cm.execCommand('indentMore');
+  } else {
+    cm.replaceSelection('    ');
+  }
+}
+
+/* '#' with a selection: toggle a "# " comment prefix on every selected line,
+   instead of replacing the selection with a literal '#'. */
+function toggleLineComment(cm) {
+  if (!cm.somethingSelected()) return CodeMirror.Pass;
+  const lineSet = new Set();
+  cm.listSelections().forEach(sel => {
+    const fromLine = Math.min(sel.anchor.line, sel.head.line);
+    const toLine = Math.max(sel.anchor.line, sel.head.line);
+    for (let l = fromLine; l <= toLine; l++) lineSet.add(l);
+  });
+  const lines = [...lineSet].sort((a, b) => a - b);
+  const codeLines = lines.filter(l => cm.getLine(l).trim() !== '');
+  const shouldUncomment = codeLines.length > 0 && codeLines.every(l => /^\s*#/.test(cm.getLine(l)));
+
+  cm.operation(() => {
+    lines.forEach(l => {
+      const text = cm.getLine(l);
+      if (text.trim() === '') return;
+      if (shouldUncomment) {
+        const m = text.match(/^(\s*)#\s?/);
+        if (m) cm.replaceRange('', { line: l, ch: m[1].length }, { line: l, ch: m[0].length });
+      } else {
+        const indent = text.match(/^\s*/)[0].length;
+        cm.replaceRange('# ', { line: l, ch: indent }, { line: l, ch: indent });
+      }
+    });
+  });
+}
+
+const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
+  mode: 'python',
+  theme: 'dracula',
+  lineNumbers: true,
+  matchBrackets: true,
+  autoCloseBrackets: true,
+  indentUnit: 4,
+  tabSize: 4,
+  extraKeys: {
+    Tab: smartTab,
+    'Shift-Tab': 'indentLess',
+    "'#'": toggleLineComment,
+    'Cmd-D': selectNextOccurrence,
+    'Ctrl-D': selectNextOccurrence
+  }
+});
+if (editorInitialValue !== null) editor.setValue(editorInitialValue);
+
+function updateCharCount() {
+  const len = editor.getValue().length;
+  const el = document.getElementById('char-count');
+  el.textContent = len + ' chars';
+  el.classList.toggle('warn', len > 1500);
+  el.title = len > 1500 ? 'Long programs may produce a very long / unreliable share URL' : '';
+}
+editor.on('change', updateCharCount);
+updateCharCount();
+
+/* ---------- Toast ---------- */
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ---------- Tabs ---------- */
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('hidden', c.id !== 'tab-' + name));
+}
+document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+/* ---------- Console ---------- */
+function clearConsole() {
+  document.getElementById('console-output').innerHTML = '';
+}
+function appendConsole(msg, cls) {
+  const pre = document.getElementById('console-output');
+  const span = document.createElement('span');
+  span.className = cls;
+  span.textContent = msg + '\n';
+  pre.appendChild(span);
+  pre.scrollTop = pre.scrollHeight;
+}
+
+/* input() bridge: override Python's builtin input() to show a real browser
+   prompt() dialog with the exact prompt text, rather than relying on
+   Pyodide's line-buffered stdin (which doesn't flush an unterminated
+   prompt string in time to be useful). */
+window._ideInputBridge = function (promptText) {
+  const value = window.prompt(promptText);
+  const result = value === null ? '' : value;
+  appendConsole(promptText + result, 'stdout');
+  return result;
+};
+const INPUT_OVERRIDE_SRC = `
+import builtins
+import js as _js
+
+def _ide_input(prompt=''):
+    return _js._ideInputBridge(str(prompt))
+
+builtins.input = _ide_input
+`;
+
+/* ---------- Pyodide setup ---------- */
+let pyodide = null;
+let pyodideReady = false;
+let isRunning = false;
+const runBtn = document.getElementById('run-btn');
+
+async function initPyodide() {
+  pyodide = await loadPyodide();
+  pyodide.setStdout({ batched: (msg) => appendConsole(msg, 'stdout') });
+  pyodide.setStderr({ batched: (msg) => appendConsole(msg, 'stderr') });
+  pyodide.setStdin({ stdin: () => (window.prompt('Input:') || '') + '\n' });
+  await pyodide.runPythonAsync(P5_MODULE_SRC);
+  await pyodide.runPythonAsync(INPUT_OVERRIDE_SRC);
+  pyodideReady = true;
+  document.getElementById('status-dot').classList.add('ready');
+  document.getElementById('status-text').textContent = 'Ready';
+  runBtn.disabled = false;
+}
+initPyodide().catch(err => {
+  document.getElementById('status-text').textContent = 'Failed to load Python runtime';
+  appendConsole(String(err), 'stderr');
+});
+
+/* ---------- Turtle mode ---------- */
+async function resetTurtleShim(ctx, canvas) {
+  window._turtleCanvas = canvas;
+  window._turtleCtx = ctx;
+  await pyodide.runPythonAsync(
+    "import sys, types\n" +
+    "_ns = {}\n" +
+    "exec(_TURTLE_SRC_TEXT, _ns)\n" +
+    "_mod = types.ModuleType('turtle')\n" +
+    "_mod.__dict__.update(_ns)\n" +
+    "sys.modules['turtle'] = _mod\n"
+  );
+}
+
+/* ---------- p5 mode ---------- */
+let currentP5Instance = null;
+let p5LoadPromise = null;
+function loadP5Library() {
+  if (window.p5) return Promise.resolve();
+  if (p5LoadPromise) return p5LoadPromise;
+  p5LoadPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return p5LoadPromise;
+}
+function createP5Instance(container) {
+  const hasSetup = pyodide.globals.get('setup');
+  const hasDraw = pyodide.globals.get('draw');
+  const sketchFn = (sketch) => {
+    window._p5Sketch = sketch;
+    sketch.setup = () => {
+      sketch.createCanvas(400, 400);
+      if (hasSetup) {
+        try { hasSetup(); } catch (e) { appendConsole(String(e.message || e), 'stderr'); }
+      }
+    };
+    if (hasDraw) {
+      sketch.draw = () => {
+        try { hasDraw(); } catch (e) { appendConsole(String(e.message || e), 'stderr'); sketch.noLoop(); }
+      };
+    }
+  };
+  currentP5Instance = new p5(sketchFn, container);
+}
+
+/* ---------- Virtual input file ---------- */
+function writeVirtualFile() {
+  const filename = document.getElementById('vfile-name').value.trim() || 'input.txt';
+  const content = document.getElementById('vfile-content').value;
+  try { pyodide.FS.writeFile(filename, content); } catch (e) { /* ignore */ }
+}
+
+/* ---------- Captured output files ---------- */
+function snapshotFS() {
+  const snap = {};
+  try {
+    const entries = pyodide.FS.readdir('.');
+    for (const name of entries) {
+      if (name === '.' || name === '..') continue;
+      try {
+        const stat = pyodide.FS.stat(name);
+        if (pyodide.FS.isFile(stat.mode)) {
+          snap[name] = stat.mtime instanceof Date ? stat.mtime.getTime() : String(stat.mtime);
+        }
+      } catch (e) { /* ignore */ }
+    }
+  } catch (e) { /* ignore */ }
+  return snap;
+}
+function diffAndListFiles(before) {
+  const after = snapshotFS();
+  const changed = [];
+  for (const name in after) {
+    if (!(name in before) || before[name] !== after[name]) changed.push(name);
+  }
+  const list = document.getElementById('files-list');
+  const empty = document.getElementById('files-empty');
+  list.innerHTML = '';
+  if (changed.length === 0) {
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  changed.forEach(name => {
+    let data;
+    try { data = pyodide.FS.readFile(name); } catch (e) { return; }
+    const blob = new Blob([data]);
+    const url = URL.createObjectURL(blob);
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.textContent = '⬇ ' + name;
+    li.appendChild(a);
+    list.appendChild(li);
+  });
+}
+
+/* ---------- Run ---------- */
+async function runCode() {
+  if (!pyodideReady || isRunning) return;
+  isRunning = true;
+  runBtn.disabled = true;
+  clearConsole();
+
+  const code = editor.getValue();
+  const isTurtle = /\bimport\s+turtle\b|\bfrom\s+turtle\s+import\b/.test(code);
+  const isP5 = !isTurtle && (/\bimport\s+p5\b|\bfrom\s+p5\s+import\b/.test(code) || /def\s+draw\s*\(\s*\)\s*:/.test(code));
+
+  const turtleCanvas = document.getElementById('turtle-canvas');
+  const p5Container = document.getElementById('p5-container');
+
+  try {
+    if (isTurtle) {
+      switchTab('graphics');
+      turtleCanvas.style.display = 'block';
+      p5Container.style.display = 'none';
+      const ctx = turtleCanvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, turtleCanvas.width, turtleCanvas.height);
+      pyodide.globals.set('_TURTLE_SRC_TEXT', TURTLE_SRC);
+      await resetTurtleShim(ctx, turtleCanvas);
+    } else if (isP5) {
+      switchTab('graphics');
+      turtleCanvas.style.display = 'none';
+      p5Container.style.display = 'block';
+      p5Container.innerHTML = '';
+      if (currentP5Instance) { currentP5Instance.remove(); currentP5Instance = null; }
+      await loadP5Library();
+    } else {
+      switchTab('console');
+    }
+
+    writeVirtualFile();
+    const before = snapshotFS();
+
+    try {
+      await pyodide.runPythonAsync(code);
+      if (isP5) createP5Instance(p5Container);
+    } catch (err) {
+      appendConsole(String(err.message || err), 'stderr');
+      switchTab('console');
+    }
+
+    diffAndListFiles(before);
+  } finally {
+    isRunning = false;
+    runBtn.disabled = false;
+  }
+}
+runBtn.addEventListener('click', runCode);
+
+/* ---------- Download / Upload ---------- */
+function downloadCode() {
+  let filename = document.getElementById('filename-input').value.trim() || 'program.py';
+  if (!filename.toLowerCase().endsWith('.py')) filename += '.py';
+  const blob = new Blob([editor.getValue()], { type: 'text/x-python' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+document.getElementById('download-btn').addEventListener('click', downloadCode);
+
+document.getElementById('upload-btn').addEventListener('click', () => document.getElementById('upload-input').click());
+document.getElementById('upload-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    editor.setValue(reader.result);
+    document.getElementById('filename-input').value = file.name;
+    updateCharCount();
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+/* ---------- Share ---------- */
+document.getElementById('share-btn').addEventListener('click', () => {
+  const code = editor.getValue();
+  const compressed = LZString.compressToEncodedURIComponent(code);
+  const url = location.origin + location.pathname + '#code=' + compressed;
+  history.replaceState(null, '', '#code=' + compressed);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url)
+      .then(() => showToast('Share link copied to clipboard!'))
+      .catch(() => showToast('URL updated in address bar'));
+  } else {
+    showToast('URL updated in address bar');
+  }
+});
+
+/* ---------- Parsons puzzle ---------- */
+let parsonsOriginal = [];
+let dragEl = null;
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  if (arr.length > 1 && arr.join('\n') === parsonsOriginal.join('\n')) {
+    [arr[0], arr[1]] = [arr[1], arr[0]];
+  }
+  return arr;
+}
+
+function makeBlock(text) {
+  const div = document.createElement('div');
+  div.className = 'parsons-block';
+  div.draggable = true;
+  div.textContent = text;
+  div.dataset.text = text;
+  div.addEventListener('dragstart', () => {
+    dragEl = div;
+    div.classList.add('dragging');
+  });
+  div.addEventListener('dragend', () => {
+    div.classList.remove('dragging');
+    dragEl = null;
+  });
+  return div;
+}
+
+function renderParsonsBlocks(shuffled) {
+  const tray = document.getElementById('parsons-tray');
+  const dz = document.getElementById('parsons-dropzone');
+  tray.innerHTML = '';
+  dz.innerHTML = '';
+  shuffled.forEach(line => tray.appendChild(makeBlock(line)));
+  document.getElementById('parsons-result').textContent = '';
+  document.getElementById('parsons-result').classList.remove('success');
+}
+
+function getDragAfterElement(container, y) {
+  const els = [...container.querySelectorAll('.parsons-block:not(.dragging)')];
+  return els.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) return { offset, element: child };
+    return closest;
+  }, { offset: -Infinity, element: null }).element;
+}
+
+[document.getElementById('parsons-tray'), document.getElementById('parsons-dropzone')].forEach(zone => {
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (!dragEl) return;
+    const afterEl = getDragAfterElement(zone, e.clientY);
+    if (afterEl == null) zone.appendChild(dragEl);
+    else zone.insertBefore(dragEl, afterEl);
+  });
+});
+
+function openParsons() {
+  const code = editor.getValue();
+  const lines = code.split('\n').filter(l => l.trim() !== '' && !l.trim().startsWith('#'));
+  if (lines.length < 2) {
+    showToast('Need at least 2 lines of code for a puzzle.');
+    return;
+  }
+  parsonsOriginal = lines;
+  renderParsonsBlocks(shuffle(lines.slice()));
+  document.getElementById('parsons-overlay').classList.remove('hidden');
+}
+document.getElementById('parsons-btn').addEventListener('click', openParsons);
+document.getElementById('parsons-close').addEventListener('click', () => {
+  document.getElementById('parsons-overlay').classList.add('hidden');
+});
+document.getElementById('parsons-reset').addEventListener('click', () => {
+  renderParsonsBlocks(shuffle(parsonsOriginal.slice()));
+});
+document.getElementById('parsons-check').addEventListener('click', () => {
+  const dz = document.getElementById('parsons-dropzone');
+  const blocks = [...dz.children];
+  let correctCount = 0;
+  blocks.forEach((block, i) => {
+    block.classList.remove('correct', 'incorrect');
+    if (parsonsOriginal[i] === block.dataset.text) {
+      block.classList.add('correct');
+      correctCount++;
+    } else {
+      block.classList.add('incorrect');
+    }
+  });
+  const result = document.getElementById('parsons-result');
+  result.classList.remove('success');
+  if (blocks.length !== parsonsOriginal.length) {
+    result.textContent = blocks.length + '/' + parsonsOriginal.length + ' lines placed, ' + correctCount + ' in the correct position.';
+  } else if (correctCount === parsonsOriginal.length) {
+    result.textContent = 'All lines are in the correct order!';
+    result.classList.add('success');
+  } else {
+    result.textContent = correctCount + '/' + parsonsOriginal.length + ' lines in the correct position.';
+  }
+});
+
+document.getElementById('parsons-share').addEventListener('click', () => {
+  const compressed = LZString.compressToEncodedURIComponent(parsonsOriginal.join('\n'));
+  const url = location.origin + location.pathname + '#puzzle=' + compressed;
+  history.replaceState(null, '', '#puzzle=' + compressed);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url)
+      .then(() => showToast('Puzzle link copied to clipboard!'))
+      .catch(() => showToast('URL updated in address bar'));
+  } else {
+    showToast('URL updated in address bar');
+  }
+});
+
+if (autoOpenPuzzle) openParsons();
+</script>
