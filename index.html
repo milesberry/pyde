@@ -140,6 +140,17 @@
     transform:translateY(10px); transition:all .25s ease; pointer-events:none; z-index:2000; max-width:20rem;
   }
   #toast.show{ opacity:1; transform:translateY(0); }
+
+  #about-overlay{ position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:1500; padding:1rem; }
+  #about-overlay.hidden{ display:none; }
+  .about-modal{
+    background:var(--bg); border:1px solid var(--comment); border-radius:9px;
+    width:min(480px,92vw); max-height:88vh; overflow:auto; padding:1.2rem 1.4rem;
+  }
+  .about-modal h2{ margin:0 0 .6rem; font-size:1.05rem; color:var(--purple); }
+  .about-modal p{ font-size:.85rem; line-height:1.5; color:var(--fg); margin:0 0 .8rem; }
+  .about-modal a{ color:var(--cyan); }
+  .about-modal code{ font-family:'Fira Code',monospace; background:var(--panel-bg); padding:.05rem .3rem; border-radius:3px; }
   .hidden{ display:none !important; }
 </style>
 <script>
@@ -163,9 +174,20 @@
   <button id="parsons-btn" class="secondary">&#129513; Parsons</button>
   <button id="share-btn" class="secondary">&#128279; Share</button>
   <button id="theme-toggle" class="secondary">&#127769; Dark</button>
+  <button id="about-btn" class="secondary">&#8505;&#65039; About</button>
   <span id="char-count">0 chars</span>
   <span id="status"><span class="status-dot" id="status-dot"></span><span id="status-text">Loading Python runtime&hellip;</span></span>
 </header>
+
+<div id="about-overlay" class="hidden">
+  <div class="about-modal">
+    <h2>About this page</h2>
+    <p>Everything here runs entirely in <strong>your own browser</strong> &mdash; Python is executed locally via WebAssembly, and nothing you write or run is ever uploaded to or executed on a server.</p>
+    <p>Share links work the same way: the code is packed into the link itself (after the <code>#</code>), which browsers never send to the server. So a shared link doesn't put anything on our infrastructure &mdash; but it does mean a link can carry <em>any</em> program. Please don't run code from a shared link you don't trust: while your tab is open, that code can still change what's on this page.</p>
+    <p>Source, licence, and details of how this was built: <a href="https://github.com/milesberry/pyde" target="_blank" rel="noopener">github.com/milesberry/pyde</a>.</p>
+    <button id="about-close">Got it</button>
+  </div>
+</div>
 
 <details class="vfile">
   <summary>Program input file (readable from Python via <code>open(filename)</code>)</summary>
@@ -1153,4 +1175,19 @@ document.getElementById('parsons-share').addEventListener('click', () => {
 });
 
 if (autoOpenPuzzle) openParsons();
+
+/* ---------- About / disclaimer ---------- */
+document.getElementById('about-btn').addEventListener('click', () => {
+  document.getElementById('about-overlay').classList.remove('hidden');
+});
+document.getElementById('about-close').addEventListener('click', () => {
+  document.getElementById('about-overlay').classList.add('hidden');
+});
+
+let seenDisclaimer = true;
+try { seenDisclaimer = localStorage.getItem('pyde-seen-disclaimer') === '1'; } catch (e) { /* ignore */ }
+if (!seenDisclaimer && !autoOpenPuzzle) {
+  document.getElementById('about-overlay').classList.remove('hidden');
+  try { localStorage.setItem('pyde-seen-disclaimer', '1'); } catch (e) { /* ignore */ }
+}
 </script>
