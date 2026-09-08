@@ -19,11 +19,20 @@
     --border:#d7dae5; --graphics-bg:#e9ebf3; --btn-text:#ffffff;
   }
   *{box-sizing:border-box;}
-  html,body{height:100%;}
+  html,body{height:100%; overflow:hidden;}
   body{
+    /* position:fixed (rather than height:100vh) keeps the layout pinned to the
+       real visual viewport on iOS Safari: 100vh is measured against the
+       largest-possible viewport, so when the on-screen keyboard opens/closes
+       mid-typing it can leave a fixed-height flex layout taller than what's
+       actually visible, and iOS's "scroll focused input into view" behaviour
+       then shoves the header off-screen with no way to scroll back (since
+       normal page scrolling is deliberately disabled here). Fixed positioning
+       has no scrollable document for iOS to push around in the first place. */
+    position:fixed; inset:0;
     margin:0; background:var(--bg); color:var(--fg);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    display:flex; flex-direction:column; height:100vh; overflow:hidden;
+    display:flex; flex-direction:column; overflow:hidden;
   }
   header.toolbar{
     display:flex; align-items:center; gap:.5rem; padding:.5rem .9rem;
@@ -700,12 +709,21 @@ function toggleLineComment(cm) {
 
 const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
 
+/* CodeMirror normally switches to a touch/virtual-keyboard-friendly
+   "contenteditable" input mode on mobile, based on sniffing the user agent
+   for phrases like "iPad". Since iPadOS 13, Safari sends a desktop-style user
+   agent by default, so that detection misses real iPads and CodeMirror falls
+   back to its plain hidden-textarea mode, which behaves worse with the
+   on-screen keyboard. Detect touch capability directly instead. */
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
 const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
   mode: 'python',
   theme: currentTheme === 'light' ? 'eclipse' : 'dracula',
   lineNumbers: true,
   matchBrackets: true,
   autoCloseBrackets: true,
+  inputStyle: isTouchDevice ? 'contenteditable' : 'textarea',
   indentUnit: 4,
   tabSize: 4,
   extraKeys: {
