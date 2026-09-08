@@ -4,11 +4,19 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css">
 <style>
   :root{
     --bg:#282a36; --current-line:#44475a; --fg:#f8f8f2; --comment:#6272a4;
     --cyan:#8be9fd; --green:#50fa7b; --orange:#ffb86c; --pink:#ff79c6;
     --purple:#bd93f9; --red:#ff5555; --yellow:#f1fa8c; --panel-bg:#21222c;
+    --border:#191a21; --graphics-bg:#1e1f29; --btn-text:#191a21;
+  }
+  :root[data-theme="light"]{
+    --bg:#ffffff; --current-line:#eef0f6; --fg:#282a36; --comment:#59607a;
+    --cyan:#0e7490; --green:#15803d; --orange:#c2410c; --pink:#be185d;
+    --purple:#7c3aed; --red:#dc2626; --yellow:#a16207; --panel-bg:#f3f4f9;
+    --border:#d7dae5; --graphics-bg:#e9ebf3; --btn-text:#ffffff;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;}
@@ -19,11 +27,11 @@
   }
   header.toolbar{
     display:flex; align-items:center; gap:.5rem; padding:.5rem .9rem;
-    background:var(--current-line); border-bottom:1px solid #191a21; flex-wrap:wrap;
+    background:var(--current-line); border-bottom:1px solid var(--border); flex-wrap:wrap;
   }
   header.toolbar h1{ font-size:.95rem; margin:0 .8rem 0 0; color:var(--purple); font-weight:600; }
   .toolbar button{
-    background:var(--purple); color:#191a21; border:none; padding:.42rem .8rem;
+    background:var(--purple); color:var(--btn-text); border:none; padding:.42rem .8rem;
     border-radius:5px; cursor:pointer; font-size:.82rem; font-weight:600;
     display:flex; align-items:center; gap:.35rem;
   }
@@ -40,7 +48,7 @@
   #char-count{ font-size:.75rem; color:var(--comment); white-space:nowrap; }
   #char-count.warn{ color:var(--orange); font-weight:700; }
 
-  details.vfile{ background:var(--panel-bg); border-bottom:1px solid #191a21; padding:.45rem 1rem; }
+  details.vfile{ background:var(--panel-bg); border-bottom:1px solid var(--border); padding:.45rem 1rem; }
   details.vfile summary{ cursor:pointer; font-size:.8rem; color:var(--comment); user-select:none; }
   .vfile-body{ display:flex; gap:.7rem; margin-top:.5rem; align-items:flex-start; flex-wrap:wrap; }
   .vfile-body label{ font-size:.75rem; color:var(--comment); display:block; margin-bottom:.2rem; }
@@ -58,9 +66,9 @@
   .panel{ flex:1; display:flex; flex-direction:column; min-width:0; }
   .panel-header{
     padding:.35rem .9rem; background:var(--panel-bg); font-size:.7rem;
-    text-transform:uppercase; letter-spacing:.06em; color:var(--comment); border-bottom:1px solid #191a21;
+    text-transform:uppercase; letter-spacing:.06em; color:var(--comment); border-bottom:1px solid var(--border);
   }
-  #editor-panel{ border-right:1px solid #191a21; }
+  #editor-panel{ border-right:1px solid var(--border); }
   #editor-panel .CodeMirror{ height:100%; font-family:'Fira Code',monospace; font-size:14px; }
   .CodeMirror{ height:100% !important; }
 
@@ -79,7 +87,7 @@
   }
   #console-output .stderr{ color:var(--red); }
   #console-output .stdout{ color:var(--fg); }
-  #tab-graphics{ display:flex; align-items:center; justify-content:center; background:#1e1f29; }
+  #tab-graphics{ display:flex; align-items:center; justify-content:center; background:var(--graphics-bg); }
   #turtle-canvas{ background:#fff; border-radius:4px; }
   #p5-container canvas{ border-radius:4px; }
   #files-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.4rem; }
@@ -125,6 +133,16 @@
   #toast.show{ opacity:1; transform:translateY(0); }
   .hidden{ display:none !important; }
 </style>
+<script>
+/* Applied as early as possible, before the toolbar renders, to avoid a flash
+   of the wrong theme. */
+(function () {
+  let saved = null;
+  try { saved = localStorage.getItem('pyde-theme'); } catch (e) { /* ignore */ }
+  const initial = saved || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark');
+  document.documentElement.setAttribute('data-theme', initial);
+})();
+</script>
 
 <header class="toolbar">
   <h1>&#128013; Python IDE</h1>
@@ -135,6 +153,7 @@
   <input id="upload-input" type="file" accept=".py" class="hidden">
   <button id="parsons-btn" class="secondary">&#129513; Parsons</button>
   <button id="share-btn" class="secondary">&#128279; Share</button>
+  <button id="theme-toggle" class="secondary">&#127769; Dark</button>
   <span id="char-count">0 chars</span>
   <span id="status"><span class="status-dot" id="status-dot"></span><span id="status-text">Loading Python runtime&hellip;</span></span>
 </header>
@@ -679,9 +698,11 @@ function toggleLineComment(cm) {
   });
 }
 
+const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+
 const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
   mode: 'python',
-  theme: 'dracula',
+  theme: currentTheme === 'light' ? 'eclipse' : 'dracula',
   lineNumbers: true,
   matchBrackets: true,
   autoCloseBrackets: true,
@@ -696,6 +717,20 @@ const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
   }
 });
 if (editorInitialValue !== null) editor.setValue(editorInitialValue);
+
+/* ---------- Theme toggle ---------- */
+function applyTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  try { localStorage.setItem('pyde-theme', mode); } catch (e) { /* ignore */ }
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.innerHTML = mode === 'dark' ? '&#9728;&#65039; Light' : '&#127769; Dark';
+  editor.setOption('theme', mode === 'light' ? 'eclipse' : 'dracula');
+}
+applyTheme(currentTheme);
+document.getElementById('theme-toggle').addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+});
 
 function updateCharCount() {
   const len = editor.getValue().length;
