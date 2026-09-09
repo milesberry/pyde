@@ -166,7 +166,7 @@
 
 <header class="toolbar">
   <h1>&#128013; Python IDE</h1>
-  <button id="run-btn" disabled>&#9654; Run</button>
+  <button id="run-btn" disabled title="If a program hangs (e.g. an infinite loop or a long time.sleep), this tab will freeze — reload the page to recover.">&#9654; Run</button>
   <input id="filename-input" type="text" value="program.py" title="Filename for download">
   <button id="download-btn" class="secondary">&#11015; Download</button>
   <button id="upload-btn" class="secondary">&#11014; Upload</button>
@@ -184,6 +184,7 @@
     <h2>About this page</h2>
     <p>Everything here runs entirely in <strong>your own browser</strong> &mdash; Python is executed locally via WebAssembly, and nothing you write or run is ever uploaded to or executed on a server.</p>
     <p>Share links work the same way: the code is packed into the link itself (after the <code>#</code>), which browsers never send to the server. So a shared link doesn't put anything on our infrastructure &mdash; but it does mean a link can carry <em>any</em> program. Please don't run code from a shared link you don't trust: while your tab is open, that code can still change what's on this page.</p>
+    <p>Because Python runs on this same tab, a program with an infinite loop (or a very long <code>time.sleep</code>) will freeze the page completely &mdash; there's currently no way to stop it from here. If that happens, reload the tab to recover.</p>
     <p>Source, licence, and details of how this was built: <a href="https://github.com/milesberry/pyde" target="_blank" rel="noopener">github.com/milesberry/pyde</a>.</p>
     <button id="about-close">Got it</button>
   </div>
