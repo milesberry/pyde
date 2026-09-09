@@ -32,6 +32,10 @@ A couple of modules are **shimmed** rather than the real thing, because the brow
 
 `input()` works, but since a browser tab can't truly pause a running script, it's implemented via a native `prompt()` dialog — see [colophon.md](colophon.md) for why.
 
+`time.process_time()` doesn't work — it always reads `0.0`, even across genuine CPU-bound work, because it relies on OS-level CPU accounting that doesn't exist inside a WebAssembly sandbox. Use `time.time()` or `time.perf_counter()` for timing code instead; both work correctly.
+
+There's currently no way to stop a running program from the page — an infinite loop or a long `time.sleep()` will freeze the tab, since Python runs on the same thread as the page itself. Reload the tab to recover.
+
 ## Running it locally
 
 There's nothing to install. Open `index.html` directly in a browser, or serve the folder with any static file server if you prefer.
