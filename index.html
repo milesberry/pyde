@@ -171,6 +171,7 @@
   <button id="download-btn" class="secondary">&#11015; Download</button>
   <button id="upload-btn" class="secondary">&#11014; Upload</button>
   <input id="upload-input" type="file" accept=".py" class="hidden">
+  <button id="tidy-btn" class="secondary" disabled title="Auto-format the code with autopep8 (PEP8 style)">&#129529; Tidy</button>
   <button id="parsons-btn" class="secondary">&#129513; Parsons</button>
   <button id="share-btn" class="secondary">&#128279; Share</button>
   <button id="theme-toggle" class="secondary">&#127769; Dark</button>
@@ -850,6 +851,7 @@ async function initPyodide() {
   document.getElementById('status-dot').classList.add('ready');
   document.getElementById('status-text').textContent = 'Ready';
   runBtn.disabled = false;
+  document.getElementById('tidy-btn').disabled = false;
 }
 initPyodide().catch(err => {
   document.getElementById('status-text').textContent = 'Failed to load Python runtime';
@@ -957,6 +959,44 @@ function diffAndListFiles(before) {
     list.appendChild(li);
   });
 }
+
+/* ---------- Tidy (autopep8) ---------- */
+let autopep8Module = null;
+async function ensureAutopep8() {
+  if (autopep8Module) return autopep8Module;
+  await pyodide.loadPackage('micropip');
+  const micropip = pyodide.pyimport('micropip');
+  await micropip.install('autopep8');
+  autopep8Module = pyodide.pyimport('autopep8');
+  return autopep8Module;
+}
+
+async function tidyCode() {
+  if (!pyodideReady) return;
+  const tidyBtn = document.getElementById('tidy-btn');
+  tidyBtn.disabled = true;
+  const originalLabel = tidyBtn.innerHTML;
+  tidyBtn.innerHTML = '&#129529; Tidying&hellip;';
+  try {
+    const autopep8 = await ensureAutopep8();
+    const before = editor.getValue();
+    const after = autopep8.fix_code(before);
+    if (after === before) {
+      showToast('Already tidy!');
+    } else {
+      const cursor = editor.getCursor();
+      editor.setValue(after);
+      editor.setCursor(cursor);
+      showToast('Code tidied with autopep8.');
+    }
+  } catch (err) {
+    showToast('Tidy failed: ' + (err.message || err));
+  } finally {
+    tidyBtn.disabled = false;
+    tidyBtn.innerHTML = originalLabel;
+  }
+}
+document.getElementById('tidy-btn').addEventListener('click', tidyCode);
 
 /* ---------- Run ---------- */
 async function runCode() {
