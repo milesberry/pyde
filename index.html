@@ -839,58 +839,247 @@ def _ide_input(prompt=''):
 builtins.input = _ide_input
 `;
 
-/* Non-blocking input(): rewrites input() calls into `yield` points (only when
-   every input() call sits at plain top-level code — not nested inside a
-   def/lambda/class, which would need a much bigger call-graph rewrite) and
-   runs the script as a generator. JS drives the generator, pausing at each
-   yield to show an inline text box in the console instead of a popup. Used
-   only for plain (non-turtle, non-p5) programs — see runCode(). */
+/* Non-blocking input(): rewrites input() calls into `yield` points and runs
+   the script as a generator, so JS can drive it and show an inline text box
+   in the console at each pause instead of a popup.
+
+   input() calls at plain top-level code (inside loops/conditionals is fine,
+   they don't introduce a scope) are the easy case. But calling input() from
+   inside a helper function is very common (and good practice), so a "tainted"
+   top-level function — one that calls input() directly, or calls another
+   tainted top-level function — is also converted into a generator, and every
+   *call site* of a tainted function is rewritten into `yield from` so the
+   pause propagates back out to the top.
+
+   This only rewrites plain `name(...)` calls to functions defined directly
+   at module level. The moment anything is ambiguous enough that a blind
+   name-based rewrite could be wrong — a tainted function called through an
+   alias or attribute, passed around as a value, decorated, recursive, or
+   whose name is shadowed by a parameter/loop variable/nested def anywhere in
+   the file — the whole thing bails out to the window.prompt() fallback
+   rather than risk silently miscompiling the program. Likewise input() (or a
+   reference to a tainted function) found inside a lambda, comprehension,
+   class body, or nested (non-top-level) function forces a bail-out, since
+   none of those are rewritten. Used only for plain (non-turtle, non-p5)
+   programs — see runCode(). */
 const INPUT_GENERATOR_SRC = `
 import ast
 
-class _PydeInputYielder(ast.NodeTransformer):
-    def __init__(self):
-        self.unsafe = False
-        self.depth = 0
 
-    def _visit_scoped(self, node):
-        self.depth += 1
-        self.generic_visit(node)
-        self.depth -= 1
-        return node
+class _PydeUnsafe(Exception):
+    pass
+
+
+def _pyde_call_name(node):
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        return node.func.id
+    return None
+
+
+class _PydeScanner(ast.NodeVisitor):
+    def __init__(self, top_level_funcs):
+        self.top_level_funcs = top_level_funcs
+        self.direct_input = set()
+        self.call_edges = {}
+        self.bound_names = set()
+        self.referenced_bare = set()
+        self.scope_stack = ['<module>']
+
+    def _edges(self):
+        return self.call_edges.setdefault(self.scope_stack[-1], set())
+
+    def _bind(self, name):
+        if isinstance(name, str):
+            self.bound_names.add(name)
+
+    def _bind_target(self, target):
+        for node in ast.walk(target):
+            if isinstance(node, ast.Name):
+                self._bind(node.id)
 
     def visit_FunctionDef(self, node):
-        return self._visit_scoped(node)
+        self._visit_function(node)
 
     def visit_AsyncFunctionDef(self, node):
-        return self._visit_scoped(node)
+        self._visit_function(node)
+
+    def _visit_function(self, node):
+        is_top_level = (
+            self.scope_stack[-1] == '<module>' and node.name in self.top_level_funcs
+        )
+        if not is_top_level:
+            self._bind(node.name)
+        for arg in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
+            self._bind(arg.arg)
+        if node.args.vararg:
+            self._bind(node.args.vararg.arg)
+        if node.args.kwarg:
+            self._bind(node.args.kwarg.arg)
+
+        if node.decorator_list:
+            for dec in node.decorator_list:
+                self.visit(dec)
+            if is_top_level:
+                self.referenced_bare.add(node.name)
+
+        if is_top_level:
+            self.scope_stack.append(node.name)
+            for stmt in node.body:
+                self.visit(stmt)
+            self.scope_stack.pop()
+        else:
+            self._scan_forbidden_scope(node)
 
     def visit_Lambda(self, node):
-        return self._visit_scoped(node)
+        self._scan_forbidden_scope(node)
 
     def visit_ClassDef(self, node):
-        return self._visit_scoped(node)
+        self._bind(node.name)
+        self._scan_forbidden_scope(node)
+
+    def visit_ListComp(self, node):
+        self._scan_forbidden_scope(node)
+
+    visit_SetComp = visit_ListComp
+    visit_DictComp = visit_ListComp
+    visit_GeneratorExp = visit_ListComp
+
+    def _scan_forbidden_scope(self, node):
+        for child in ast.walk(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                self._bind(child.name)
+            elif isinstance(child, ast.arg):
+                self._bind(child.arg)
+            elif isinstance(child, ast.Call) and _pyde_call_name(child) == 'input':
+                raise _PydeUnsafe('input() used somewhere too complex to safely rewrite')
+            elif isinstance(child, ast.Name) and child.id in self.top_level_funcs:
+                raise _PydeUnsafe('a function is referenced somewhere too complex to safely rewrite')
+
+    def visit_Assign(self, node):
+        for target in node.targets:
+            self._bind_target(target)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node):
+        self._bind_target(node.target)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node):
+        self._bind_target(node.target)
+        self.generic_visit(node)
+
+    def visit_For(self, node):
+        self._bind_target(node.target)
+        self.generic_visit(node)
+
+    def visit_With(self, node):
+        for item in node.items:
+            if item.optional_vars:
+                self._bind_target(item.optional_vars)
+        self.generic_visit(node)
+
+    def visit_ExceptHandler(self, node):
+        self._bind(node.name)
+        self.generic_visit(node)
+
+    def visit_Global(self, node):
+        for name in node.names:
+            self._bind(name)
+        self.generic_visit(node)
+
+    def visit_Nonlocal(self, node):
+        for name in node.names:
+            self._bind(name)
+        self.generic_visit(node)
+
+    def visit_Call(self, node):
+        name = _pyde_call_name(node)
+        if name == 'input':
+            self.direct_input.add(self.scope_stack[-1])
+        elif name is not None and name in self.top_level_funcs:
+            self._edges().add(name)
+        else:
+            self.visit(node.func)
+        for arg in node.args:
+            self.visit(arg)
+        for kw in node.keywords:
+            self.visit(kw.value)
+
+    def visit_Name(self, node):
+        if node.id in self.top_level_funcs and not isinstance(node.ctx, ast.Store):
+            self.referenced_bare.add(node.id)
+
+
+class _PydeRewriter(ast.NodeTransformer):
+    def __init__(self, tainted):
+        self.tainted = tainted
 
     def visit_Call(self, node):
         self.generic_visit(node)
-        if isinstance(node.func, ast.Name) and node.func.id == 'input':
-            if self.depth > 0:
-                self.unsafe = True
-                return node
+        name = _pyde_call_name(node)
+        if name == 'input':
             prompt_arg = node.args[0] if node.args else ast.Constant(value='')
-            yield_node = ast.Yield(value=prompt_arg)
-            return ast.copy_location(yield_node, node)
+            return ast.copy_location(ast.Yield(value=prompt_arg), node)
+        if name in self.tainted:
+            return ast.copy_location(ast.YieldFrom(value=node), node)
         return node
+
+
+def _pyde_find_cycle(tainted, call_edges):
+    visiting, visited = set(), set()
+
+    def dfs(name):
+        if name in visited:
+            return False
+        if name in visiting:
+            return True
+        visiting.add(name)
+        for nxt in call_edges.get(name, ()):
+            if nxt in tainted and dfs(nxt):
+                return True
+        visiting.discard(name)
+        visited.add(name)
+        return False
+
+    return any(dfs(name) for name in tainted)
+
 
 def _pyde_make_input_generator(source):
     try:
         tree = ast.parse(source, mode='exec')
     except SyntaxError:
         return None
-    transformer = _PydeInputYielder()
-    new_tree = transformer.visit(tree)
-    if transformer.unsafe:
+
+    top_level_funcs = {
+        node.name: node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+    scanner = _PydeScanner(top_level_funcs)
+    try:
+        scanner.visit(tree)
+    except _PydeUnsafe:
         return None
+
+    tainted = set(scanner.direct_input) & set(top_level_funcs)
+    changed = True
+    while changed:
+        changed = False
+        for name in top_level_funcs:
+            if name in tainted:
+                continue
+            if scanner.call_edges.get(name, set()) & tainted:
+                tainted.add(name)
+                changed = True
+
+    if tainted & scanner.referenced_bare:
+        return None
+    if tainted & scanner.bound_names:
+        return None
+    if _pyde_find_cycle(tainted, scanner.call_edges):
+        return None
+
+    new_tree = _PydeRewriter(tainted).visit(tree)
     body = new_tree.body if new_tree.body else [ast.Pass()]
     func_def = ast.FunctionDef(
         name='__pyde_main',
