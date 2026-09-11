@@ -620,10 +620,82 @@ def tracer(*a, **k): pass
 def update(): pass
 `;
 
-/* p5 module: forwards attribute access to the live JS p5 instance */
+/* p5 module. `import p5; p5.whatever(...)` forwards any attribute lazily to
+   the live JS p5 instance via __getattr__, covering the full p5.js API.
+   That alone doesn't help `from p5 import *` though — Python's star-import
+   only copies names that actually exist in the module's namespace, it never
+   calls __getattr__ - so a curated set of real wrapper functions is defined
+   too, covering the common drawing/canvas/colour API plus the snake_case
+   names (no_fill, no_stroke, size for createCanvas, ...) that the actual
+   "p5"/Processing-style Python convention uses, since that's what code
+   written against `from p5 import *` tends to assume. Anything whose name
+   would shadow a Python builtin (map, min, max, print, pow, ...) is left out
+   of that curated set on purpose - it stays reachable via `p5.min(...)` etc.
+   Live-valued properties (width, mouseX, frameCount, PI, ...) aren't in the
+   curated set either: `from p5 import *` captures a value once, at import
+   time, before the sketch even exists, so there's no way to make those
+   "live" that way - use `import p5; p5.width` for those instead. */
 const P5_MODULE_SRC = `
 import sys, types
 import js as _js
+
+def _pyde_p5_method(js_name):
+    def wrapper(*args, **kwargs):
+        sketch = getattr(_js, "_p5Sketch", None)
+        if sketch is None:
+            raise RuntimeError("p5 sketch is not ready yet")
+        return getattr(sketch, js_name)(*args, **kwargs)
+    wrapper.__name__ = js_name
+    return wrapper
+
+_PYDE_P5_FUNCS = [
+    ("createCanvas", "createCanvas"), ("create_canvas", "createCanvas"), ("size", "createCanvas"),
+    ("resizeCanvas", "resizeCanvas"), ("resize_canvas", "resizeCanvas"),
+    ("background", "background"),
+    ("clear", "clear"),
+    ("noLoop", "noLoop"), ("no_loop", "noLoop"),
+    ("loop", "loop"),
+    ("frameRate", "frameRate"), ("frame_rate", "frameRate"),
+    ("fill", "fill"),
+    ("noFill", "noFill"), ("no_fill", "noFill"),
+    ("stroke", "stroke"),
+    ("noStroke", "noStroke"), ("no_stroke", "noStroke"),
+    ("strokeWeight", "strokeWeight"), ("stroke_weight", "strokeWeight"),
+    ("colorMode", "colorMode"), ("color_mode", "colorMode"),
+    ("color", "color"),
+    ("circle", "circle"),
+    ("ellipse", "ellipse"),
+    ("rect", "rect"),
+    ("square", "square"),
+    ("line", "line"),
+    ("point", "point"),
+    ("triangle", "triangle"),
+    ("quad", "quad"),
+    ("arc", "arc"),
+    ("beginShape", "beginShape"), ("begin_shape", "beginShape"),
+    ("endShape", "endShape"), ("end_shape", "endShape"),
+    ("vertex", "vertex"),
+    ("curveVertex", "curveVertex"), ("curve_vertex", "curveVertex"),
+    ("bezierVertex", "bezierVertex"), ("bezier_vertex", "bezierVertex"),
+    ("text", "text"),
+    ("textSize", "textSize"), ("text_size", "textSize"),
+    ("textAlign", "textAlign"), ("text_align", "textAlign"),
+    ("textFont", "textFont"), ("text_font", "textFont"),
+    ("translate", "translate"),
+    ("rotate", "rotate"),
+    ("scale", "scale"),
+    ("push", "push"),
+    ("pop", "pop"),
+    ("constrain", "constrain"),
+    ("dist", "dist"),
+    ("lerp", "lerp"),
+    ("norm", "norm"),
+    ("sq", "sq"),
+    ("sqrt", "sqrt"),
+    ("remap", "map"),
+    ("random", "random"),
+    ("noise", "noise"),
+]
 
 class _P5Module(types.ModuleType):
     def __getattr__(self, name):
@@ -632,7 +704,13 @@ class _P5Module(types.ModuleType):
             raise AttributeError(name)
         return getattr(sketch, name)
 
-sys.modules['p5'] = _P5Module('p5')
+_p5_module = _P5Module('p5')
+_p5_all = []
+for _py_name, _js_name in _PYDE_P5_FUNCS:
+    setattr(_p5_module, _py_name, _pyde_p5_method(_js_name))
+    _p5_all.append(_py_name)
+_p5_module.__all__ = _p5_all
+sys.modules['p5'] = _p5_module
 `;
 
 /* ---------- CodeMirror setup ---------- */
