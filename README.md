@@ -31,7 +31,7 @@ A couple of modules are **shimmed** rather than the real thing, because the brow
 
 **Not supported:** anything needing real OS features — `tkinter` (GUI), `socket` (raw networking), `subprocess`, `multiprocessing`, real threads, or the real filesystem (there's an in-memory virtual filesystem instead, used for the input/output file feature). Third-party PyPI packages (numpy, pandas, etc.) aren't loaded — there's no `pip`/`micropip` wiring, so only what ships with Pyodide's base distribution is available.
 
-`input()` works, but since a browser tab can't truly pause a running script, it's implemented via a native `prompt()` dialog — see [colophon.md](colophon.md) for why.
+`input()` works. For plain (non-turtle, non-p5) programs where every `input()` call sits at top-level code — the common case, e.g. a guess-the-number loop — it shows an inline text box right in the console, keeping the full scrollback visible while you answer. If `input()` is called from inside a nested function, or the program uses turtle/p5, it falls back to a native `prompt()` dialog instead. See [colophon.md](colophon.md) for how (and why it can't always avoid the popup).
 
 `time.process_time()` doesn't work — it always reads `0.0`, even across genuine CPU-bound work, because it relies on OS-level CPU accounting that doesn't exist inside a WebAssembly sandbox. Use `time.time()` or `time.perf_counter()` for timing code instead; both work correctly.
 

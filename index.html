@@ -96,6 +96,11 @@
   }
   #console-output .stderr{ color:var(--red); }
   #console-output .stdout{ color:var(--fg); }
+  .console-inline-input{
+    background:transparent; border:none; border-bottom:1px solid var(--purple);
+    color:var(--fg); font-family:'Fira Code',monospace; font-size:13px;
+    outline:none; padding:0 .2rem; width:12em;
+  }
   #tab-graphics{ display:flex; align-items:center; justify-content:center; background:var(--graphics-bg); }
   #turtle-canvas{ background:#fff; border-radius:4px; }
   #p5-container canvas{ border-radius:4px; }
@@ -834,6 +839,133 @@ def _ide_input(prompt=''):
 builtins.input = _ide_input
 `;
 
+/* Non-blocking input(): rewrites input() calls into `yield` points (only when
+   every input() call sits at plain top-level code — not nested inside a
+   def/lambda/class, which would need a much bigger call-graph rewrite) and
+   runs the script as a generator. JS drives the generator, pausing at each
+   yield to show an inline text box in the console instead of a popup. Used
+   only for plain (non-turtle, non-p5) programs — see runCode(). */
+const INPUT_GENERATOR_SRC = `
+import ast
+
+class _PydeInputYielder(ast.NodeTransformer):
+    def __init__(self):
+        self.unsafe = False
+        self.depth = 0
+
+    def _visit_scoped(self, node):
+        self.depth += 1
+        self.generic_visit(node)
+        self.depth -= 1
+        return node
+
+    def visit_FunctionDef(self, node):
+        return self._visit_scoped(node)
+
+    def visit_AsyncFunctionDef(self, node):
+        return self._visit_scoped(node)
+
+    def visit_Lambda(self, node):
+        return self._visit_scoped(node)
+
+    def visit_ClassDef(self, node):
+        return self._visit_scoped(node)
+
+    def visit_Call(self, node):
+        self.generic_visit(node)
+        if isinstance(node.func, ast.Name) and node.func.id == 'input':
+            if self.depth > 0:
+                self.unsafe = True
+                return node
+            prompt_arg = node.args[0] if node.args else ast.Constant(value='')
+            yield_node = ast.Yield(value=prompt_arg)
+            return ast.copy_location(yield_node, node)
+        return node
+
+def _pyde_make_input_generator(source):
+    try:
+        tree = ast.parse(source, mode='exec')
+    except SyntaxError:
+        return None
+    transformer = _PydeInputYielder()
+    new_tree = transformer.visit(tree)
+    if transformer.unsafe:
+        return None
+    body = new_tree.body if new_tree.body else [ast.Pass()]
+    func_def = ast.FunctionDef(
+        name='__pyde_main',
+        args=ast.arguments(
+            posonlyargs=[], args=[], vararg=None,
+            kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]
+        ),
+        body=body,
+        decorator_list=[],
+        returns=None,
+    )
+    wrapper = ast.Module(body=[func_def], type_ignores=[])
+    ast.fix_missing_locations(wrapper)
+    ns = {}
+    exec(compile(wrapper, '<exec>', 'exec'), ns)
+    return ns['__pyde_main']()
+`;
+
+/* Shows an inline, in-console text box for one input() request and resolves
+   with what the student typed once they press Enter. Unlike window.prompt(),
+   this keeps the whole console scrollback visible the whole time. */
+function requestInlineInput(promptText) {
+  return new Promise((resolve) => {
+    const pre = document.getElementById('console-output');
+    const line = document.createElement('span');
+    line.className = 'console-input-line';
+    const promptSpan = document.createElement('span');
+    promptSpan.className = 'stdout';
+    promptSpan.textContent = promptText;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'console-inline-input';
+    input.autocomplete = 'off';
+    input.autocapitalize = 'off';
+    input.spellcheck = false;
+    line.appendChild(promptSpan);
+    line.appendChild(input);
+    pre.appendChild(line);
+    pre.scrollTop = pre.scrollHeight;
+    input.focus();
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const value = input.value;
+        line.remove();
+        appendConsole(promptText + value, 'stdout');
+        resolve(value);
+      }
+    });
+  });
+}
+
+/* Attempts the non-blocking inline-input path for a plain (non-graphics)
+   program. Returns false (without side effects) if the code has no input()
+   calls, or if the AST transform couldn't safely rewrite them (input() used
+   inside a nested function) — the caller then falls back to running the
+   code normally, where input() still works via the window.prompt() bridge. */
+async function tryRunWithInlineInput(code) {
+  if (!/\binput\s*\(/.test(code)) return false;
+  let gen;
+  try {
+    gen = pyodide.globals.get('_pyde_make_input_generator')(code);
+  } catch (e) {
+    return false;
+  }
+  if (!gen) return false;
+  let sendValue;
+  while (true) {
+    const result = gen.next(sendValue);
+    if (result.done) break;
+    sendValue = await requestInlineInput(String(result.value));
+  }
+  return true;
+}
+
 /* ---------- Pyodide setup ---------- */
 let pyodide = null;
 let pyodideReady = false;
@@ -847,6 +979,7 @@ async function initPyodide() {
   pyodide.setStdin({ stdin: () => (window.prompt('Input:') || '') + '\n' });
   await pyodide.runPythonAsync(P5_MODULE_SRC);
   await pyodide.runPythonAsync(INPUT_OVERRIDE_SRC);
+  await pyodide.runPythonAsync(INPUT_GENERATOR_SRC);
   pyodideReady = true;
   document.getElementById('status-dot').classList.add('ready');
   document.getElementById('status-text').textContent = 'Ready';
@@ -1037,8 +1170,14 @@ async function runCode() {
     const before = snapshotFS();
 
     try {
-      await pyodide.runPythonAsync(code);
-      if (isP5) createP5Instance(p5Container);
+      let handledInline = false;
+      if (!isTurtle && !isP5) {
+        handledInline = await tryRunWithInlineInput(code);
+      }
+      if (!handledInline) {
+        await pyodide.runPythonAsync(code);
+        if (isP5) createP5Instance(p5Container);
+      }
     } catch (err) {
       appendConsole(String(err.message || err), 'stderr');
       switchTab('console');
