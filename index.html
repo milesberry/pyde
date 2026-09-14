@@ -47,6 +47,8 @@
   .toolbar button:hover{ filter:brightness(1.12); }
   .toolbar button:disabled{ opacity:.45; cursor:not-allowed; }
   .toolbar button.secondary{ background:var(--current-line); color:var(--fg); border:1px solid var(--comment); }
+  .font-size-group{ display:inline-flex; gap:.25rem; }
+  .font-size-group button{ padding-left:.6rem; padding-right:.6rem; }
   #filename-input{
     background:var(--panel-bg); color:var(--fg); border:1px solid var(--comment);
     border-radius:5px; padding:.35rem .5rem; font-size:.8rem; width:9.5rem; font-family:'Fira Code',monospace; font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; -webkit-font-feature-settings:"liga" 0,"calt" 0,"dlig" 0;
@@ -77,9 +79,14 @@
     padding:.35rem .9rem; background:var(--panel-bg); font-size:.7rem;
     text-transform:uppercase; letter-spacing:.06em; color:var(--comment); border-bottom:1px solid var(--border);
   }
-  #editor-panel{ border-right:1px solid var(--border); }
-  #editor-panel .CodeMirror{ height:100%; font-family:'Fira Code',monospace; font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; -webkit-font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; font-size:14px; }
+  #editor-panel .CodeMirror{ height:100%; font-family:'Fira Code',monospace; font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; -webkit-font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; font-size:var(--editor-font-size,14px); }
   .CodeMirror{ height:100% !important; }
+
+  #panel-splitter{
+    flex:0 0 auto; width:7px; margin:0 -1px; cursor:col-resize; background:var(--border);
+    position:relative; z-index:1; touch-action:none;
+  }
+  #panel-splitter:hover, #panel-splitter.dragging{ background:var(--purple); }
 
   #output-panel{ background:var(--panel-bg); }
   .tabs{ display:flex; gap:.3rem; padding:.4rem .7rem 0; background:var(--panel-bg); }
@@ -92,7 +99,7 @@
   .tab-content.hidden{ display:none; }
   #console-output{
     margin:0; white-space:pre-wrap; word-break:break-word; font-family:'Fira Code',monospace; font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; -webkit-font-feature-settings:"liga" 0,"calt" 0,"dlig" 0;
-    font-size:13px; line-height:1.45;
+    font-size:var(--editor-font-size,14px); line-height:1.45;
   }
   #console-output .stderr{ color:var(--red); }
   #console-output .stdout{ color:var(--fg); }
@@ -117,9 +124,9 @@
     background:var(--bg); border:1px solid var(--comment); border-radius:9px;
     width:min(920px,92vw); max-height:88vh; display:flex; flex-direction:column; padding:1rem 1.4rem;
   }
-  .parsons-header{ display:flex; justify-content:space-between; align-items:center; }
+  .parsons-header{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; }
   .parsons-header h2{ margin:0; font-size:1.05rem; color:var(--purple); }
-  .parsons-actions{ display:flex; gap:.5rem; }
+  .parsons-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
   .parsons-instructions{ color:var(--comment); font-size:.82rem; margin:.5rem 0 0; }
   .parsons-columns{ display:flex; gap:1rem; flex:1; overflow:auto; margin-top:.6rem; }
   .parsons-column{ flex:1; display:flex; flex-direction:column; min-width:0; }
@@ -179,6 +186,10 @@
   <button id="tidy-btn" class="secondary" disabled title="Auto-format the code with autopep8 (PEP8 style)">&#129529; Tidy</button>
   <button id="parsons-btn" class="secondary">&#129513; Parsons</button>
   <button id="share-btn" class="secondary">&#128279; Share</button>
+  <span class="font-size-group">
+    <button id="font-smaller" class="secondary" title="Smaller text">A&#8722;</button>
+    <button id="font-larger" class="secondary" title="Larger text">A+</button>
+  </span>
   <button id="theme-toggle" class="secondary">&#127769; Dark</button>
   <button id="about-btn" class="secondary">&#8505;&#65039; About</button>
   <span id="char-count">0 chars</span>
@@ -222,6 +233,7 @@ for i in range(5):
 print("Hello, world!")
 </textarea>
   </section>
+  <div id="panel-splitter" title="Drag to resize"></div>
   <section class="panel" id="output-panel">
     <div class="tabs">
       <button class="tab-btn active" data-tab="console">Console</button>
@@ -737,6 +749,16 @@ if (location.hash.startsWith('#code=')) {
   } catch (e) { /* ignore malformed hash */ }
 }
 
+/* No share link - fall back to whatever was last saved locally, so a crash
+   or an accidental reload doesn't lose someone's work (see draft auto-save
+   further down, once the editor exists). */
+if (editorInitialValue === null) {
+  try {
+    const draft = localStorage.getItem('pyde-draft');
+    if (draft) editorInitialValue = draft;
+  } catch (e) { /* ignore */ }
+}
+
 /* Cmd-D / Ctrl-D: select word under cursor, then add each further match as an
    extra selection (like VS Code / Sublime "select next occurrence"). */
 function selectNextOccurrence(cm) {
@@ -823,6 +845,18 @@ function toggleLineComment(cm) {
   });
 }
 
+/* Backspace at the start of an indented line (only whitespace before the
+   cursor) deletes back to the previous indent stop, not just one space. */
+function smartBackspace(cm) {
+  if (cm.somethingSelected()) return CodeMirror.Pass;
+  const cur = cm.getCursor();
+  const beforeCursor = cm.getLine(cur.line).slice(0, cur.ch);
+  if (!/^\s+$/.test(beforeCursor)) return CodeMirror.Pass;
+  const tabSize = cm.getOption('indentUnit') || 4;
+  const deleteCount = cur.ch % tabSize === 0 ? tabSize : cur.ch % tabSize;
+  cm.replaceRange('', { line: cur.line, ch: cur.ch - deleteCount }, cur);
+}
+
 const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
 
 /* CodeMirror normally switches to a touch/virtual-keyboard-friendly
@@ -845,12 +879,83 @@ const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
   extraKeys: {
     Tab: smartTab,
     'Shift-Tab': 'indentLess',
+    Backspace: smartBackspace,
     "'#'": toggleLineComment,
     'Cmd-D': selectNextOccurrence,
     'Ctrl-D': selectNextOccurrence
   }
 });
 if (editorInitialValue !== null) editor.setValue(editorInitialValue);
+
+/* ---------- Draft auto-save ---------- */
+/* Registered after the initial setValue above, so loading a share/puzzle
+   link's content (or the placeholder shown before a puzzle is solved) never
+   itself counts as a save - only actual edits from here do. */
+let draftSaveTimer = null;
+editor.on('change', () => {
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(() => {
+    try { localStorage.setItem('pyde-draft', editor.getValue()); } catch (e) { /* ignore */ }
+  }, 500);
+});
+
+/* ---------- Font size ---------- */
+let editorFontSize = 14;
+try {
+  const savedFontSize = parseInt(localStorage.getItem('pyde-font-size') || '', 10);
+  if (!isNaN(savedFontSize)) editorFontSize = savedFontSize;
+} catch (e) { /* ignore */ }
+
+function applyFontSize(size) {
+  editorFontSize = Math.max(10, Math.min(28, size));
+  document.documentElement.style.setProperty('--editor-font-size', editorFontSize + 'px');
+  try { localStorage.setItem('pyde-font-size', String(editorFontSize)); } catch (e) { /* ignore */ }
+  editor.refresh();
+}
+applyFontSize(editorFontSize);
+document.getElementById('font-smaller').addEventListener('click', () => applyFontSize(editorFontSize - 2));
+document.getElementById('font-larger').addEventListener('click', () => applyFontSize(editorFontSize + 2));
+
+/* ---------- Resizable editor/output split ---------- */
+(function () {
+  const splitter = document.getElementById('panel-splitter');
+  const editorPanel = document.getElementById('editor-panel');
+  const workspace = document.querySelector('main.workspace');
+  let dragging = false;
+
+  function applyWidth(px) {
+    const min = 200;
+    const max = workspace.clientWidth - 200 - splitter.offsetWidth;
+    if (max <= min) return;
+    editorPanel.style.flex = '0 0 ' + Math.max(min, Math.min(max, px)) + 'px';
+    editor.refresh();
+  }
+
+  try {
+    const savedWidth = parseInt(localStorage.getItem('pyde-editor-width') || '', 10);
+    if (!isNaN(savedWidth)) applyWidth(savedWidth);
+  } catch (e) { /* ignore */ }
+
+  splitter.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    splitter.classList.add('dragging');
+    splitter.setPointerCapture(e.pointerId);
+  });
+  splitter.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    applyWidth(e.clientX - workspace.getBoundingClientRect().left);
+  });
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove('dragging');
+    try {
+      localStorage.setItem('pyde-editor-width', String(Math.round(editorPanel.getBoundingClientRect().width)));
+    } catch (e) { /* ignore */ }
+  }
+  splitter.addEventListener('pointerup', endDrag);
+  splitter.addEventListener('pointercancel', endDrag);
+})();
 
 /* ---------- Theme toggle ---------- */
 function applyTheme(mode) {
