@@ -247,6 +247,7 @@ print("Hello, world!")
       <div class="parsons-actions">
         <button id="parsons-check">Check</button>
         <button id="parsons-reset" class="secondary">Reshuffle</button>
+        <button id="parsons-copy" class="secondary">&#128203; Copy</button>
         <button id="parsons-share" class="secondary">&#128279; Share Puzzle</button>
         <button id="parsons-close" class="secondary">Close</button>
       </div>
@@ -716,6 +717,7 @@ sys.modules['p5'] = _p5_module
 /* ---------- CodeMirror setup ---------- */
 let editorInitialValue = null;
 let autoOpenPuzzle = false;
+let pendingPuzzleCode = null;
 if (location.hash.startsWith('#code=')) {
   try {
     const decoded = LZString.decompressFromEncodedURIComponent(location.hash.slice(6));
@@ -724,7 +726,14 @@ if (location.hash.startsWith('#code=')) {
 } else if (location.hash.startsWith('#puzzle=')) {
   try {
     const decoded = LZString.decompressFromEncodedURIComponent(location.hash.slice(8));
-    if (decoded) { editorInitialValue = decoded; autoOpenPuzzle = true; }
+    if (decoded) {
+      // Deliberately NOT put in the editor - closing the puzzle before
+      // solving it must not reveal the answer. It only ever lives in
+      // pendingPuzzleCode / parsonsOriginal until solved correctly.
+      pendingPuzzleCode = decoded;
+      autoOpenPuzzle = true;
+      editorInitialValue = '# Solve the puzzle to reveal the code!\n# (click "Parsons" above if it does not open automatically)';
+    }
   } catch (e) { /* ignore malformed hash */ }
 }
 
@@ -1565,8 +1574,8 @@ function getDragAfterElement(container, y) {
   });
 });
 
-function openParsons() {
-  const code = editor.getValue();
+function openParsons(sourceOverride) {
+  const code = sourceOverride !== undefined && sourceOverride !== null ? sourceOverride : editor.getValue();
   const lines = code.split('\n').filter(l => l.trim() !== '' && !l.trim().startsWith('#'));
   if (lines.length < 2) {
     showToast('Need at least 2 lines of code for a puzzle.');
@@ -1576,7 +1585,7 @@ function openParsons() {
   renderParsonsBlocks(shuffle(lines.slice()));
   document.getElementById('parsons-overlay').classList.remove('hidden');
 }
-document.getElementById('parsons-btn').addEventListener('click', openParsons);
+document.getElementById('parsons-btn').addEventListener('click', () => openParsons(pendingPuzzleCode));
 document.getElementById('parsons-close').addEventListener('click', () => {
   document.getElementById('parsons-overlay').classList.add('hidden');
 });
@@ -1603,8 +1612,27 @@ document.getElementById('parsons-check').addEventListener('click', () => {
   } else if (correctCount === parsonsOriginal.length) {
     result.textContent = 'All lines are in the correct order!';
     result.classList.add('success');
+    // Solved fairly - now safe to reveal in the editor (matters most for a
+    // shared puzzle link, where the editor never held the real code before this).
+    editor.setValue(parsonsOriginal.join('\n'));
   } else {
     result.textContent = correctCount + '/' + parsonsOriginal.length + ' lines in the correct position.';
+  }
+});
+
+document.getElementById('parsons-copy').addEventListener('click', () => {
+  const dz = document.getElementById('parsons-dropzone');
+  const text = [...dz.children].map(b => b.dataset.text).join('\n');
+  if (!text) {
+    showToast('Nothing to copy yet - drag some lines in first.');
+    return;
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => showToast('Copied to clipboard!'))
+      .catch(() => showToast('Copy failed - select and copy manually.'));
+  } else {
+    showToast('Clipboard not available.');
   }
 });
 
@@ -1621,7 +1649,7 @@ document.getElementById('parsons-share').addEventListener('click', () => {
   }
 });
 
-if (autoOpenPuzzle) openParsons();
+if (autoOpenPuzzle) openParsons(pendingPuzzleCode);
 
 /* ---------- About / disclaimer ---------- */
 document.getElementById('about-btn').addEventListener('click', () => {

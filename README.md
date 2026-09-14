@@ -14,7 +14,7 @@ Built for teaching (GCSE/A Level CS style exercises), but useful for any quick "
 - **Virtual input file** — paste text into the "Program input file" box and it's readable from Python via `open("filename")`. Any files your program writes are picked up automatically and offered as downloads.
 - **Turtle graphics** — `import turtle` (or `from turtle import *`) renders to an on-page canvas.
 - **p5.js sketches** — write `setup()` / `draw()` functions and call `p5.background(...)`, `p5.ellipse(...)`, etc. p5.js is loaded from CDN on demand.
-- **Parsons puzzles** — turn the current code into a drag-and-drop line-reordering puzzle, with a Check button that highlights right/wrong placements. Shareable as a standalone puzzle link.
+- **Parsons puzzles** — turn the current code into a drag-and-drop line-reordering puzzle, with a Check button that highlights right/wrong placements, and a Copy button for the completed arrangement. Shareable as a standalone puzzle link — the answer is never loaded into the editor until solved correctly, so closing the puzzle before solving it doesn't reveal the original code.
 - **Share via URL** — the whole program (or just a Parsons puzzle) is LZ-compressed into the page's URL hash, so a link fully reproduces it with no backend.
 - **Tidy** — auto-formats the code to PEP8 style with [autopep8](https://github.com/hhatto/autopep8), installed on demand via `micropip` the first time it's used.
 
