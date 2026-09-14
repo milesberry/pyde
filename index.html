@@ -887,6 +887,63 @@ const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
 });
 if (editorInitialValue !== null) editor.setValue(editorInitialValue);
 
+/* ---------- Copy with syntax colour (for pasting into Word/OneNote etc) ---------- */
+/* Word and OneNote render whatever's in the clipboard's text/html entry, so
+   alongside the normal plain-text copy, this also writes an HTML version
+   with each token coloured to match. The colours are read live from the
+   real CodeMirror CSS for the *current* theme (via a throwaway offscreen
+   element) rather than a hand-maintained map, so this can't drift out of
+   sync with dracula.css/eclipse.css or a theme switch. */
+const _tokenColorCache = {};
+function _pyde_tokenColor(themeClass, type) {
+  const key = themeClass + '|' + (type || '');
+  if (key in _tokenColorCache) return _tokenColorCache[key];
+  const probe = document.createElement('div');
+  probe.className = 'CodeMirror ' + themeClass;
+  probe.style.cssText = 'position:absolute; left:-9999px; top:-9999px;';
+  const span = document.createElement('span');
+  if (type) span.className = type.split(' ').map(t => 'cm-' + t).join(' ');
+  span.textContent = 'x';
+  probe.appendChild(span);
+  document.body.appendChild(probe);
+  const color = getComputedStyle(span).color;
+  document.body.removeChild(probe);
+  _tokenColorCache[key] = color;
+  return color;
+}
+function _pyde_escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function _pyde_highlightedHtml(cm, from, to) {
+  const themeClass = 'cm-s-' + cm.getOption('theme');
+  let html = '';
+  for (let line = from.line; line <= to.line; line++) {
+    const tokens = cm.getLineTokens(line);
+    const startCh = line === from.line ? from.ch : 0;
+    const endCh = line === to.line ? to.ch : cm.getLine(line).length;
+    const lineText = cm.getLine(line);
+    tokens.forEach(tok => {
+      const s = Math.max(tok.start, startCh);
+      const e = Math.min(tok.end, endCh);
+      if (s >= e) return;
+      const color = _pyde_tokenColor(themeClass, tok.type);
+      html += '<span style="color:' + color + '">' + _pyde_escapeHtml(lineText.slice(s, e)) + '</span>';
+    });
+    if (line !== to.line) html += '\n';
+  }
+  return html;
+}
+editor.getWrapperElement().addEventListener('copy', (e) => {
+  if (!editor.somethingSelected() || !e.clipboardData) return;
+  const ranges = editor.listSelections()
+    .map(sel => CodeMirror.cmpPos(sel.anchor, sel.head) <= 0 ? { from: sel.anchor, to: sel.head } : { from: sel.head, to: sel.anchor })
+    .sort((a, b) => CodeMirror.cmpPos(a.from, b.from));
+  const html = ranges.map(r => _pyde_highlightedHtml(editor, r.from, r.to)).join('\n');
+  e.clipboardData.setData('text/plain', editor.getSelection());
+  e.clipboardData.setData('text/html', '<pre style="font-family:Consolas,\'Fira Code\',monospace; white-space:pre; margin:0;">' + html + '</pre>');
+  e.preventDefault();
+});
+
 /* ---------- Draft auto-save ---------- */
 /* Registered after the initial setValue above, so loading a share/puzzle
    link's content (or the placeholder shown before a puzzle is solved) never
