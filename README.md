@@ -11,11 +11,11 @@ Built for teaching (GCSE/A Level CS style exercises), but useful for any quick "
 - **Multi-cursor editing** — select a word and press `Cmd-D` / `Ctrl-D` to select the next occurrence, VS Code / Sublime style.
 - **Block comment / indent** — select some lines, press `#` to toggle a comment prefix on all of them, or `Tab` / `Shift-Tab` to indent/dedent the block.
 - **Download / Upload** — save your code as a `.py` file, or load one from disk.
-- **Virtual input file** — paste text into the "Program input file" box and it's readable from Python via `open("filename")`. Any files your program writes are picked up automatically and offered as downloads.
+- **Virtual input file** — paste text into the "Program input file" box and it's readable from Python via `open("filename")`. Any files your program writes are picked up automatically — text files show their content right on the page (handy on iPad, where downloading a blob is clunky), with a download link alongside; binary files are download-only.
 - **Turtle graphics** — `import turtle` (or `from turtle import *`) renders to an on-page canvas.
 - **p5.js sketches** — write `setup()` / `draw()` functions and call `p5.background(...)`, `p5.ellipse(...)`, etc. p5.js is loaded from CDN on demand.
 - **Parsons puzzles** — turn the current code into a drag-and-drop line-reordering puzzle, with a Check button that highlights right/wrong placements, and a Copy button for the completed arrangement. Shareable as a standalone puzzle link — the answer is never loaded into the editor until solved correctly, so closing the puzzle before solving it doesn't reveal the original code.
-- **Share via URL** — the whole program (or just a Parsons puzzle) is LZ-compressed into the page's URL hash, so a link fully reproduces it with no backend.
+- **Share via URL** — the whole program (or just a Parsons puzzle) is LZ-compressed into the page's URL hash, so a link fully reproduces it with no backend. If the program reads a file via the input box above, that content travels in the link too, so a shared example that depends on it actually works for whoever opens it.
 - **Tidy** — auto-formats the code to PEP8 style with [autopep8](https://github.com/hhatto/autopep8), installed on demand via `micropip` the first time it's used.
 
 ## Supported libraries

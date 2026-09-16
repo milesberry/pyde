@@ -111,11 +111,21 @@
   #tab-graphics{ display:flex; align-items:center; justify-content:center; background:var(--graphics-bg); }
   #turtle-canvas{ background:#fff; border-radius:4px; }
   #p5-container canvas{ border-radius:4px; }
-  #files-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.4rem; }
-  #files-list li a{
-    color:var(--cyan); text-decoration:none; font-family:'Fira Code',monospace; font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; -webkit-font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; font-size:.85rem;
+  #files-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.7rem; }
+  .file-entry{ border:1px solid var(--comment); border-radius:6px; padding:.5rem; background:var(--bg); }
+  .file-entry-header{ display:flex; justify-content:space-between; align-items:center; gap:.5rem; margin-bottom:.35rem; }
+  .file-entry-name{ font-family:'Fira Code',monospace; font-size:.85rem; color:var(--fg); font-weight:600; }
+  .file-entry-header a{
+    color:var(--cyan); text-decoration:none; font-family:'Fira Code',monospace; font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; -webkit-font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; font-size:.8rem; white-space:nowrap;
   }
-  #files-list li a:hover{ text-decoration:underline; }
+  .file-entry-header a:hover{ text-decoration:underline; }
+  .file-entry-preview{
+    width:100%; min-height:80px; max-height:240px; resize:vertical; box-sizing:border-box;
+    background:var(--panel-bg); color:var(--fg); border:1px solid var(--comment); border-radius:4px;
+    font-family:'Fira Code',monospace; font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0,"dlig" 0; -webkit-font-feature-settings:"liga" 0,"calt" 0,"dlig" 0;
+    font-size:.78rem; padding:.4rem;
+  }
+  .file-entry-binary-note{ margin:0; font-size:.78rem; color:var(--comment); font-style:italic; }
   #files-empty{ color:var(--comment); font-size:.85rem; }
 
   #parsons-overlay{ position:fixed; inset:0; background:#000; display:flex; align-items:center; justify-content:center; z-index:1000; }
@@ -726,25 +736,45 @@ _p5_module.__all__ = _p5_all
 sys.modules['p5'] = _p5_module
 `;
 
+/* Share payloads are either a plain code string (the original format - kept
+   so old links never break) or, when a program input file needs to travel
+   with it, a JSON object {code, vfileName, vfileContent}. Real Python source
+   never happens to also be valid JSON matching that shape, so trying JSON
+   first and falling back to "it's just the code" is unambiguous. */
+function _pyde_decodeSharePayload(decoded) {
+  try {
+    const obj = JSON.parse(decoded);
+    if (obj && typeof obj.code === 'string') return obj;
+  } catch (e) { /* not JSON - plain code from the older format */ }
+  return { code: decoded };
+}
+
 /* ---------- CodeMirror setup ---------- */
 let editorInitialValue = null;
 let autoOpenPuzzle = false;
 let pendingPuzzleCode = null;
+let pendingVfile = null;
 if (location.hash.startsWith('#code=')) {
   try {
     const decoded = LZString.decompressFromEncodedURIComponent(location.hash.slice(6));
-    if (decoded) editorInitialValue = decoded;
+    if (decoded) {
+      const parsed = _pyde_decodeSharePayload(decoded);
+      editorInitialValue = parsed.code;
+      if (parsed.vfileContent !== undefined) pendingVfile = { name: parsed.vfileName, content: parsed.vfileContent };
+    }
   } catch (e) { /* ignore malformed hash */ }
 } else if (location.hash.startsWith('#puzzle=')) {
   try {
     const decoded = LZString.decompressFromEncodedURIComponent(location.hash.slice(8));
     if (decoded) {
+      const parsed = _pyde_decodeSharePayload(decoded);
       // Deliberately NOT put in the editor - closing the puzzle before
       // solving it must not reveal the answer. It only ever lives in
       // pendingPuzzleCode / parsonsOriginal until solved correctly.
-      pendingPuzzleCode = decoded;
+      pendingPuzzleCode = parsed.code;
       autoOpenPuzzle = true;
       editorInitialValue = '# Solve the puzzle to reveal the code!\n# (click "Parsons" above if it does not open automatically)';
+      if (parsed.vfileContent !== undefined) pendingVfile = { name: parsed.vfileName, content: parsed.vfileContent };
     }
   } catch (e) { /* ignore malformed hash */ }
 }
@@ -886,6 +916,11 @@ const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
   }
 });
 if (editorInitialValue !== null) editor.setValue(editorInitialValue);
+if (pendingVfile) {
+  document.getElementById('vfile-name').value = pendingVfile.name || 'input.txt';
+  document.getElementById('vfile-content').value = pendingVfile.content || '';
+  document.querySelector('details.vfile').open = true;
+}
 
 /* ---------- Copy with syntax colour (for pasting into Word/OneNote etc) ---------- */
 /* Word and OneNote render whatever's in the clipboard's text/html entry, so
@@ -1521,12 +1556,42 @@ function diffAndListFiles(before) {
     try { data = pyodide.FS.readFile(name); } catch (e) { return; }
     const blob = new Blob([data]);
     const url = URL.createObjectURL(blob);
+
     const li = document.createElement('li');
+    li.className = 'file-entry';
+
+    const header = document.createElement('div');
+    header.className = 'file-entry-header';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'file-entry-name';
+    nameSpan.textContent = name;
     const a = document.createElement('a');
     a.href = url;
     a.download = name;
-    a.textContent = '⬇ ' + name;
-    li.appendChild(a);
+    a.textContent = '⬇ Download';
+    header.appendChild(nameSpan);
+    header.appendChild(a);
+    li.appendChild(header);
+
+    // Show text files inline (handy on iPad, where downloading a blob is
+    // clunky) - falls back to a download-only note for anything not valid
+    // UTF-8 text.
+    let text = null;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(data); } catch (e) { /* binary */ }
+    if (text !== null) {
+      const preview = document.createElement('textarea');
+      preview.className = 'file-entry-preview';
+      preview.readOnly = true;
+      preview.spellcheck = false;
+      preview.value = text;
+      li.appendChild(preview);
+    } else {
+      const note = document.createElement('p');
+      note.className = 'file-entry-binary-note';
+      note.textContent = 'Binary file - download to view.';
+      li.appendChild(note);
+    }
+
     list.appendChild(li);
   });
 }
@@ -1660,9 +1725,19 @@ document.getElementById('upload-input').addEventListener('change', (e) => {
 });
 
 /* ---------- Share ---------- */
+/* Bundles the program input file into the link too, when one's filled in,
+   so a shared example that reads a file actually works for whoever opens
+   it - not just a plain code string any more. */
+function _pyde_buildSharePayload(code) {
+  const vfileContent = document.getElementById('vfile-content').value;
+  if (!vfileContent) return code;
+  const vfileName = document.getElementById('vfile-name').value.trim() || 'input.txt';
+  return JSON.stringify({ code, vfileName, vfileContent });
+}
+
 document.getElementById('share-btn').addEventListener('click', () => {
   const code = editor.getValue();
-  const compressed = LZString.compressToEncodedURIComponent(code);
+  const compressed = LZString.compressToEncodedURIComponent(_pyde_buildSharePayload(code));
   const url = location.origin + location.pathname + '#code=' + compressed;
   history.replaceState(null, '', '#code=' + compressed);
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1799,7 +1874,7 @@ document.getElementById('parsons-copy').addEventListener('click', () => {
 });
 
 document.getElementById('parsons-share').addEventListener('click', () => {
-  const compressed = LZString.compressToEncodedURIComponent(parsonsOriginal.join('\n'));
+  const compressed = LZString.compressToEncodedURIComponent(_pyde_buildSharePayload(parsonsOriginal.join('\n')));
   const url = location.origin + location.pathname + '#puzzle=' + compressed;
   history.replaceState(null, '', '#puzzle=' + compressed);
   if (navigator.clipboard && navigator.clipboard.writeText) {
