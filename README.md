@@ -7,11 +7,13 @@ Built for teaching (GCSE/A Level CS style exercises), but useful for any quick "
 ## Features
 
 - **Run Python** — full CPython 3.12, compiled to WebAssembly (via [Pyodide](https://pyodide.org)), executing directly in your tab. stdout/stderr are captured and shown in the console, with errors colour-coded.
+- **New** — a clearly-labelled way to start a blank program, distinct from just deleting everything in the editor (which reads as normal practice to a pupil watching, when the point is to save the old one and start a deliberate new one).
 - **Syntax highlighting** — [CodeMirror 5](https://codemirror.net/5/) with a Python mode and a dark (Dracula) / light (Eclipse) theme toggle. Copying a selection also writes a colour-highlighted `text/html` version to the clipboard alongside the plain text, matching the current theme, so pasting into Word/OneNote/Google Docs keeps the syntax colours instead of landing as flat text.
 - **Multi-cursor editing** — select a word and press `Cmd-D` / `Ctrl-D` to select the next occurrence, VS Code / Sublime style.
 - **Block comment / indent** — select some lines, press `#` to toggle a comment prefix on all of them, or `Tab` / `Shift-Tab` to indent/dedent the block.
 - **Download / Upload** — save your code as a `.py` file, or load one from disk.
 - **Virtual input file** — paste text into the "Program input file" box and it's readable from Python via `open("filename")`. Any files your program writes are picked up automatically — text files show their content right on the page (handy on iPad, where downloading a blob is clunky), with a download link alongside; binary files are download-only.
+- **Auto-recovery** — the editor and the input file both save to `localStorage` as you type and restore automatically next visit, so closing the tab, a crash, or a hung program doesn't lose your work. A page refresh after editing further than a share link always reflects your latest changes, not the stale shared snapshot.
 - **Turtle graphics** — `import turtle` (or `from turtle import *`) renders to an on-page canvas.
 - **p5.js sketches** — write `setup()` / `draw()` functions and call `p5.background(...)`, `p5.ellipse(...)`, etc. p5.js is loaded from CDN on demand.
 - **Parsons puzzles** — turn the current code into a drag-and-drop line-reordering puzzle, with a Check button that highlights right/wrong placements, and a Copy button for the completed arrangement. Shareable as a standalone puzzle link — the answer is never loaded into the editor until solved correctly, so closing the puzzle before solving it doesn't reveal the original code.

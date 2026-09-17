@@ -189,6 +189,7 @@
 <header class="toolbar">
   <h1>&#128013; Python IDE</h1>
   <button id="run-btn" disabled title="If a program hangs (e.g. an infinite loop or a long time.sleep), this tab will freeze — reload the page to recover.">&#9654; Run</button>
+  <button id="new-btn" class="secondary" title="Start a new, blank program">&#128196; New</button>
   <input id="filename-input" type="text" value="program.py" title="Filename for download">
   <button id="download-btn" class="secondary">&#11015; Download</button>
   <button id="upload-btn" class="secondary">&#11014; Upload</button>
@@ -920,6 +921,16 @@ if (pendingVfile) {
   document.getElementById('vfile-name').value = pendingVfile.name || 'input.txt';
   document.getElementById('vfile-content').value = pendingVfile.content || '';
   document.querySelector('details.vfile').open = true;
+} else {
+  // No share link carrying an input file - fall back to whatever was last
+  // typed there, same safety net as the code draft below.
+  try {
+    const savedVfile = JSON.parse(localStorage.getItem('pyde-vfile') || 'null');
+    if (savedVfile && (savedVfile.name || savedVfile.content)) {
+      document.getElementById('vfile-name').value = savedVfile.name || 'input.txt';
+      document.getElementById('vfile-content').value = savedVfile.content || '';
+    }
+  } catch (e) { /* ignore */ }
 }
 
 /* ---------- Copy with syntax colour (for pasting into Word/OneNote etc) ---------- */
@@ -985,11 +996,35 @@ editor.getWrapperElement().addEventListener('copy', (e) => {
    itself counts as a save - only actual edits from here do. */
 let draftSaveTimer = null;
 editor.on('change', () => {
+  // A share/puzzle link's #hash describes a snapshot from when it was
+  // created. The moment the code changes, that snapshot is stale - keeping
+  // it in the address bar means a later page refresh would silently discard
+  // the newer edits and reload the old shared version instead. Drop it, so
+  // a refresh falls through to the draft below (the actual latest content).
+  if (location.hash) {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+  }
   clearTimeout(draftSaveTimer);
   draftSaveTimer = setTimeout(() => {
     try { localStorage.setItem('pyde-draft', editor.getValue()); } catch (e) { /* ignore */ }
   }, 500);
 });
+
+/* ---------- Input file auto-save ---------- */
+let vfileSaveTimer = null;
+function scheduleVfileSave() {
+  clearTimeout(vfileSaveTimer);
+  vfileSaveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem('pyde-vfile', JSON.stringify({
+        name: document.getElementById('vfile-name').value,
+        content: document.getElementById('vfile-content').value
+      }));
+    } catch (e) { /* ignore */ }
+  }, 500);
+}
+document.getElementById('vfile-name').addEventListener('input', scheduleVfileSave);
+document.getElementById('vfile-content').addEventListener('input', scheduleVfileSave);
 
 /* ---------- Font size ---------- */
 let editorFontSize = 14;
@@ -1722,6 +1757,35 @@ document.getElementById('upload-input').addEventListener('change', (e) => {
   };
   reader.readAsText(file);
   e.target.value = '';
+});
+
+/* ---------- New ---------- */
+/* A clearly-labelled way to start a genuinely blank program, distinct from
+   "select all, delete" - the latter reads as normal practice to a pupil
+   watching, when what we actually want is a deliberate, obvious action that
+   doesn't look like how you'd tidy up code you meant to keep. */
+document.getElementById('new-btn').addEventListener('click', () => {
+  if (!confirm('Start a new, blank program? This replaces the current code and input file.')) return;
+  if (currentP5Instance) { currentP5Instance.remove(); currentP5Instance = null; }
+  editor.setValue('');
+  document.getElementById('filename-input').value = 'program.py';
+  document.getElementById('vfile-name').value = 'input.txt';
+  document.getElementById('vfile-content').value = '';
+  document.getElementById('turtle-canvas').style.display = 'none';
+  document.getElementById('p5-container').style.display = 'none';
+  document.getElementById('p5-container').innerHTML = '';
+  clearConsole();
+  document.getElementById('files-list').innerHTML = '';
+  document.getElementById('files-empty').classList.remove('hidden');
+  switchTab('console');
+  try {
+    localStorage.removeItem('pyde-draft');
+    localStorage.removeItem('pyde-vfile');
+  } catch (e) { /* ignore */ }
+  if (location.hash) {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+  }
+  showToast('Started a new blank program.');
 });
 
 /* ---------- Share ---------- */
